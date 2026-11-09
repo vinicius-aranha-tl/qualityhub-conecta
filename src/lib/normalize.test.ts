@@ -59,7 +59,7 @@ describe("normalizeEvolution", () => {
   });
 });
 
-describe("formato real squaredup", () => {
+describe("formato real Quality Hub", () => {
   const history = { schemaVersion: 1, executions: [{ generatedAt: "2026-10-30T17:03:24.602Z", workflow: "Testes API", run: { id: "41095166285", attempt: 1, event: "schedule" }, tests: { available: true, total: 88, passed: 86, failed: 1, flaky: 1, errors: 0 }, flakyTests: [{ title: "GET /x" }], testResults: [] }] };
   it("rebuilds results from summary counts", () => {
     const [e] = normalizeExecutions(history, "api");

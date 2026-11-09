@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireBackendAuth } from "@/lib/backend-auth";
 import { mapProject } from "@/lib/backend-client";
 import type { EvolutionPoint, Execution, Product } from "@/lib/metrics";
-import { countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeLifecycle, normalizeReasons, normalizeStability, REASONS_FILE, SQUAREDUP_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
+import { countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeLifecycle, normalizeReasons, normalizeStability, REASONS_FILE, QUALITY_HUB_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 
 export type SourceKind = "executions" | "evolution";
 export interface SourceStatus {
@@ -15,35 +15,66 @@ export interface SourceStatus {
 
 const ALLOWED_HOSTS = ["raw.githubusercontent.com", "api.github.com"];
 const TTL = 5 * 60_000;
-const cache = new Map<string, { at: number; value: unknown }>();
+const CACHE_LIMIT = 500;
+const cache = new Map<string, { at: number; value: unknown; legacy: boolean }>();
 const nameRe = /^[A-Za-z0-9_.-]{1,100}$/;
 
-/** Fetches JSON from GitHub on the server with GITHUB_TOKEN (never sent to the browser). Cached 5 min. */
-async function fetchGithub(url: string, force = false, raw = true): Promise<unknown> {
+function remember(url: string, value: unknown, legacy: boolean) {
+  const now = Date.now();
+  for (const [key, entry] of cache) if (now - entry.at >= TTL) cache.delete(key);
+  // Map preserva a ordem de inserção: remove as entradas mais antigas ao atingir o limite.
+  while (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
+  cache.set(url, { at: now, value, legacy });
+}
+
+/** Fetches JSON from GitHub on the server with GITHUB_TOKEN (never sent to the browser). Cached 5 min. `legacy` = served from squaredup/. */
+async function fetchGithubSource(url: string, force = false, raw = true): Promise<{ value: unknown; legacy: boolean }> {
   const hit = cache.get(url);
-  if (!force && hit && Date.now() - hit.at < TTL) return hit.value;
+  if (!force && hit && Date.now() - hit.at < TTL) return { value: hit.value, legacy: hit.legacy };
   const u = new URL(url);
   if (!ALLOWED_HOSTS.includes(u.hostname)) throw new Error(`Host não permitido (${u.hostname}).`);
   const token = process.env["GITHUB_TOKEN"];
-  const res = await fetch(u, {
+  const requestOptions = {
     headers: {
       // raw media type returns file bodies directly (works above the 1 MB base64 limit)
       Accept: raw && u.hostname === "api.github.com" ? "application/vnd.github.raw+json" : "application/vnd.github+json",
       "User-Agent": "dashboard-metrics-for-qa",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-  });
+  };
+  let res = await fetch(u, requestOptions);
+  let legacy = false;
+  // Transição: consultar o diretório anterior apenas quando o novo arquivo ainda não existir.
+  if (res.status === 404 && u.hostname === "api.github.com" && u.pathname.includes("/contents/quality-hub")) {
+    const previous = new URL(u);
+    previous.pathname = previous.pathname.replace(/\/contents\/quality-hub(?=\/|$)/, "/contents/squaredup");
+    res = await fetch(previous, requestOptions);
+    legacy = res.ok;
+  }
   if (!res.ok) {
     const hint = res.status === 404 ? (token ? " — arquivo, branch ou repositório não encontrado (ou token sem acesso)." : " — repositório privado? Configure o GITHUB_TOKEN.") : res.status === 401 ? " — token inválido ou expirado." : res.status === 403 ? " — sem permissão ou limite de uso do GitHub." : "";
     throw new Error(`GitHub respondeu ${res.status}${hint}`);
   }
   const value = decodeGithubContent(await res.json());
-  cache.set(url, { at: Date.now(), value });
-  return value;
+  remember(url, value, legacy);
+  return { value, legacy };
+}
+
+async function fetchGithub(url: string, force = false, raw = true): Promise<unknown> {
+  return (await fetchGithubSource(url, force, raw)).value;
+}
+
+/** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; results[i] = await fn(items[i] as T); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 export function contentsUrl(owner: string, repo: string, branch: string, file: string) {
-  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/squaredup/${file}?ref=${encodeURIComponent(branch)}`;
+  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/quality-hub/${file}?ref=${encodeURIComponent(branch)}`;
 }
 
 async function readSource<T>(url: string | null, normalize: (raw: unknown) => T, force: boolean, count: (d: T) => number = (d) => (d as unknown[]).length, missingIsUnavailable = false) {
@@ -93,8 +124,8 @@ export const loadDashboardData = createServerFn({ method: "POST" })
     const response = await fetch(`${backendUrl}/api/v1/projects`, { headers: { cookie: context.backendCookie } });
     if (!response.ok) throw new Error("Não foi possível carregar os projetos.");
     const projects = (await response.json() as Parameters<typeof mapProject>[0][]).map(mapProject).filter(p => !data.slug || p.slug === data.slug);
-    const out: ProjectData[] = [];
-    for (const p of projects ?? []) {
+    // Sincroniza até 3 projetos ao mesmo tempo para não esperar um por um nem estourar o limite do GitHub.
+    return mapLimit(projects, 3, async (p): Promise<ProjectData> => {
       const sourceKey = JSON.stringify(["dated-failures-v2", p.api_repo_owner, p.api_repo_name, p.api_branch, p.ui_repo_owner, p.ui_repo_name, p.ui_branch, p.api_executions_url, p.api_evolution_url, p.ui_executions_url, p.ui_evolution_url]);
       const fingerprint = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sourceKey)))].map(byte => byte.toString(16).padStart(2, "0")).join("");
       const snapshotUrl = `${backendUrl}/api/v1/metric-snapshots/${encodeURIComponent(p.id)}`;
@@ -105,10 +136,9 @@ export const loadDashboardData = createServerFn({ method: "POST" })
       const fresh = cached && Date.now() - Date.parse(cached.fetchedAt) < TTL;
       if (context.backendRole !== "admin") {
         if (!cached) throw new Error(`As métricas de ${p.name} ainda não foram sincronizadas. Peça a um administrador para atualizar os dados.`);
-        out.push(cached);
-        continue;
+        return cached;
       }
-      if (!force && fresh) { out.push(cached); continue; }
+      if (!force && fresh) return cached;
       const repo = {
         api: p.api_repo_owner && p.api_repo_name ? { owner: p.api_repo_owner, name: p.api_repo_name, branch: p.api_branch } : null,
         ui: p.ui_repo_owner && p.ui_repo_name ? { owner: p.ui_repo_owner, name: p.ui_repo_name, branch: p.ui_branch } : null,
@@ -151,7 +181,7 @@ export const loadDashboardData = createServerFn({ method: "POST" })
       }
       const failed = (["api", "ui"] as const).some(product => sources[product].executions.mode === "error" || sources[product].evolution.mode === "error");
       if (failed) {
-        if (cached) { out.push({ ...cached, refreshError: "Não foi possível atualizar todos os dados no GitHub. Exibindo a última sincronização salva." }); continue; }
+        if (cached) return { ...cached, refreshError: "Não foi possível atualizar todos os dados no GitHub. Exibindo a última sincronização salva." };
         throw new Error(`Não foi possível sincronizar as métricas de ${p.name} no GitHub.`);
       }
       const dataset: ProjectData = { project: { id: p.id, name: p.name, slug: p.slug }, sources, executions, evolution, special, fetchedAt: new Date().toISOString(), sourceFingerprint: fingerprint };
@@ -159,14 +189,13 @@ export const loadDashboardData = createServerFn({ method: "POST" })
       if (!persisted.ok) throw new Error(`Não foi possível salvar as métricas de ${p.name} no MongoDB.`);
       const stored = await fetch(snapshotUrl, { headers: { cookie: context.backendCookie } });
       if (!stored.ok) throw new Error(`Não foi possível ler as métricas salvas de ${p.name}.`);
-      out.push(await stored.json() as ProjectData);
-    }
-    return out;
+      return await stored.json() as ProjectData;
+    });
   });
 
 export interface FileCheck { file: string; ok: boolean; records: number | null; updatedAt: string | null; expected: boolean; message?: string }
 
-/** Lists every file in squaredup/ and reads each one, reporting status, records and updatedAt. */
+/** Lists every file in quality-hub/ and reads each one, reporting status, records and updatedAt. */
 export const testRepo = createServerFn({ method: "POST" })
   .middleware([requireBackendAuth])
   .validator((d: unknown) => z.object({
@@ -175,27 +204,26 @@ export const testRepo = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     if (context.backendRole !== "admin") throw new Error("Acesso restrito a administradores.");
     const tokenConfigured = Boolean(process.env["GITHUB_TOKEN"]);
-    const dirUrl = `https://api.github.com/repos/${encodeURIComponent(data.owner)}/${encodeURIComponent(data.repo)}/contents/squaredup?ref=${encodeURIComponent(data.branch)}`;
+    const dirUrl = `https://api.github.com/repos/${encodeURIComponent(data.owner)}/${encodeURIComponent(data.repo)}/contents/quality-hub?ref=${encodeURIComponent(data.branch)}`;
     let names: string[];
     try {
       const dir = await fetchGithub(dirUrl, true, false);
-      if (!Array.isArray(dir)) throw new Error("squaredup/ não é uma pasta");
+      if (!Array.isArray(dir)) throw new Error("quality-hub/ não é uma pasta");
       names = dir.filter((f) => f && f.type === "file" && String(f.name).endsWith(".json")).map((f) => String(f.name));
     } catch (e) {
-      return { files: [] as FileCheck[], tokenConfigured, error: `Não foi possível listar squaredup/: ${(e as Error).message}` };
+      return { files: [] as FileCheck[], tokenConfigured, error: `Não foi possível listar quality-hub/: ${(e as Error).message}` };
     }
-    const expected = SQUAREDUP_FILES[data.product];
+    const expected = QUALITY_HUB_FILES[data.product];
     const all = [...new Set([...expected, ...names])];
     const files: FileCheck[] = await Promise.all(all.map(async (file) => {
       const isExpected = expected.includes(file);
-      if (!names.includes(file)) return { file, ok: false, records: null, updatedAt: null, expected: isExpected, message: "Arquivo não publicado na pasta." };
       try {
-        const raw = await fetchGithub(contentsUrl(data.owner, data.repo, data.branch, file), true);
+        const { value: raw, legacy } = await fetchGithubSource(contentsUrl(data.owner, data.repo, data.branch, file), true);
         let records = countRecords(raw);
         if (file === EXECUTIONS_FILE) records = normalizeExecutions(raw, data.product).length;
         if (file === EVOLUTION_FILE[data.product]) records = normalizeEvolution(raw).length;
         const up = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>)["updatedAt"] : null;
-        return { file, ok: true, records, updatedAt: typeof up === "string" ? up : null, expected: isExpected };
+        return { file, ok: true, records, updatedAt: typeof up === "string" ? up : null, expected: isExpected, ...(legacy ? { message: "Lido da pasta antiga squaredup/ — publique em quality-hub/." } : {}) };
       } catch (e) {
         const msg = e instanceof FormatError ? `Formato não reconhecido: ${e.message}` : (e as Error).message;
         return { file, ok: false, records: null, updatedAt: null, expected: isExpected, message: msg };

@@ -94,7 +94,12 @@ app.MapPost("/auth/login", async (LoginRequest request, HttpContext context, ICo
     {
         var normalized = request.Email?.Trim().ToLowerInvariant() ?? "";
         var user = await database.GetCollection<BsonDocument>("users").Find(Builders<BsonDocument>.Filter.Eq("email", normalized)).FirstOrDefaultAsync(context.RequestAborted);
-        if (user is null) return Results.Unauthorized();
+        if (user is null)
+        {
+            // Mesmo custo de verificação de um usuário existente, para não revelar e-mails cadastrados pelo tempo de resposta.
+            new PasswordHasher<string>().VerifyHashedPassword(normalized, DummyPasswordHash.Value, request.Password ?? "");
+            return Results.Unauthorized();
+        }
         email = user["email"].AsString;
         hash = user["passwordHash"].AsString;
         role = user["role"].AsString;
@@ -290,6 +295,10 @@ app.Run();
 
 static bool ValidUser(string email, string? role) => role is "viewer" or "admin" && email.Length <= 254 && System.Net.Mail.MailAddress.TryCreate(email, out var parsed) && parsed.Address == email;
 static string PasswordVersion(string hash) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(hash)));
+static class DummyPasswordHash
+{
+    public static readonly string Value = new PasswordHasher<string>().HashPassword("timing-guard", Guid.NewGuid().ToString());
+}
 record UserInput(string? Email, string? Role, string? Password);
 record LoginRequest(string? Email, string? Password);
 record WidgetInput(string? ProjectId, string Product, string WidgetType, string Title, string Width, int Position)

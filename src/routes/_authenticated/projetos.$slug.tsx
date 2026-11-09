@@ -143,7 +143,7 @@ function SourcesForm({ project }: { project: Project }) {
       {(["api", "ui"] as const).map((pr) => {
         const res = results[pr];
         return (
-          <Panel key={pr} title={`Repositório de automação — ${pr.toUpperCase()}`} info="A plataforma lê os arquivos da pasta squaredup/ na branch de métricas, pelo servidor, com um token de leitura. Se uma fonte não estiver configurada ou um arquivo não existir, o painel informa a indisponibilidade e não exibe dados de demonstração.">
+          <Panel key={pr} title={`Repositório de automação — ${pr.toUpperCase()}`} info="A plataforma lê os arquivos da pasta quality-hub/ na branch de métricas, pelo servidor, com um token de leitura. Se uma fonte não estiver configurada ou um arquivo não existir, o painel informa a indisponibilidade e não exibe dados de demonstração.">
             <div className="mb-3 flex items-center gap-2 text-xs">
               <span className={configured(pr) ? "rounded bg-success/15 px-2 py-0.5 text-success" : "rounded bg-warning/15 px-2 py-0.5 text-warning"}>{configured(pr) ? "Modo real (GitHub)" : "Fonte não configurada"}</span>
             </div>
@@ -160,8 +160,9 @@ function SourcesForm({ project }: { project: Project }) {
                 {res.files.map((f) => (
                   <div key={f.file} className="flex items-start gap-2 text-xs">
                     {f.ok ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" /> : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />}
-                    <span className="font-mono">squaredup/{f.file}</span>
+                    <span className="font-mono">quality-hub/{f.file}</span>
                     <span className={f.ok ? "text-muted-foreground" : "text-danger"}>{f.ok ? `${f.records ?? "?"} registros${f.updatedAt ? ` · atualizado em ${new Date(f.updatedAt).toLocaleString("pt-BR")}` : ""}` : f.message}</span>
+                    {f.ok && f.message && <span className="text-warning">{f.message}</span>}
                   </div>
                 ))}
               </div>

@@ -1,8 +1,8 @@
 import type { EvolutionPoint, Execution, Product, TestResult, Trigger } from "@/lib/metrics";
 import { groupFailureOccurrences } from "@/lib/metrics";
 
-/** Files published by the automations under squaredup/ on the metrics branch. */
-export const SQUAREDUP_FILES: Record<Product, string[]> = {
+/** Files published by the automations under quality-hub/ on the metrics branch. */
+export const QUALITY_HUB_FILES: Record<Product, string[]> = {
   api: [
     "latest.json", "history.json", "test-history.json", "test-stability-30d.json", "execution-trend-30d.json",
     "period-comparison.json", "failure-reasons-30d.json", "failure-lifecycle.json",
