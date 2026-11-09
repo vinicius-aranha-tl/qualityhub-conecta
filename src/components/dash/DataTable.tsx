@@ -36,7 +36,7 @@ export function DataTable<T extends Record<string, unknown>>({ rows, columns, in
   return (
     <div className="min-w-0">
       <div className="relative mb-3 max-w-xs">
-        <Search aria-hidden="true" className="absolute left-2.5 top-2.5 h-4 w-4 text-[#686b72]" />
+        <Search aria-hidden="true" className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input aria-label="Buscar na tabela" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…" className="h-9 pl-8" />
       </div>
       {detailView && <p className="mb-2 text-xs text-muted-foreground">Clique no cenário ou no erro para ver as informações completas.</p>}
@@ -51,7 +51,7 @@ export function DataTable<T extends Record<string, unknown>>({ rows, columns, in
                 {columns.map((c) => {
                   const Icon = sort?.key === c.key ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
                   return (
-                    <th key={c.key} scope="col" className={`sticky top-0 z-10 border-r border-border bg-[#42464d] px-3 py-2 font-medium last:border-r-0 ${c.numeric ? "text-right" : "text-left"}`}>
+                  <th key={c.key} scope="col" className={`sticky top-0 z-10 border-r border-border bg-subtle px-3 py-2 font-medium text-foreground last:border-r-0 ${c.numeric ? "text-right" : "text-left"}`}>
                       <button type="button" onClick={() => toggle(c.key)} className="inline-flex items-center gap-1 hover:text-foreground">
                         {c.label}
                         <Icon className="h-3 w-3" />

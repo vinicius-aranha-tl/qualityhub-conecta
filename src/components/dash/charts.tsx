@@ -103,7 +103,7 @@ export function CauseBars({ data }: { data: { cause: string; value: number }[] }
   if (!data.length) return <EmptyState>Nenhuma falha definitiva no período.</EmptyState>;
   const sorted = [...data].sort((a, b) => b.value - a.value);
   const total = sorted.reduce((sum, item) => sum + item.value, 0);
-  const color = (percentage: number) => percentage >= 50 ? "#ef5964" : percentage >= 25 ? "#ffa64d" : percentage >= 10 ? "#efc45b" : "#65b7ee";
+  const color = (percentage: number) => percentage >= 50 ? "var(--danger)" : percentage >= 25 ? "var(--warning)" : percentage >= 10 ? "var(--conecta-color-brand-institutional)" : "var(--conecta-color-info)";
   return (
     <div>
       <p className="mb-4 text-xs text-muted-foreground">Quantidade de ocorrências e participação no total de falhas definitivas.</p>

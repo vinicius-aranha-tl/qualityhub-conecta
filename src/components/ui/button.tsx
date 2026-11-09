@@ -11,7 +11,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary-hover active:bg-[color:var(--conecta-color-action-primary-active)]",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-[#922019]",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline: "border-input bg-card text-foreground hover:bg-subtle",
         secondary: "border-input bg-card text-foreground hover:bg-subtle",
         ghost: "text-[color:var(--conecta-color-content-secondary)] hover:bg-subtle hover:text-foreground",
