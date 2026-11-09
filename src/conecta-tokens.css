@@ -1,0 +1,197 @@
+/*
+ * Conecta Design System — tokens oficiais (@conecta-ag/tokens).
+ * Copiado de https://github.com/Conecta-ag/conecta-DS (branch hml, commit 8019dcd),
+ * packages/tokens/src/platforms/css/tokens.css. Não edite aqui: atualize a partir do repositório.
+ */
+:root {
+  color-scheme: light;
+
+  --conecta-color-brand-institutional: #073032;
+  --conecta-color-background-page: #f2f2f2;
+  --conecta-color-background-surface: #ffffff;
+  --conecta-color-background-subtle: #fbfaf4;
+  --conecta-color-background-overlay: rgb(15 15 15 / 45%);
+  --conecta-color-content-primary: #1a1a1a;
+  --conecta-color-content-secondary: #4d4d4d;
+  --conecta-color-content-muted: #666666;
+  --conecta-color-content-muted-on-page: #6d6d6d;
+  --conecta-color-content-disabled: #babcbe;
+  --conecta-color-content-inverse: #ffffff;
+  --conecta-color-border-subtle: #e5e5e5;
+  --conecta-color-border-default: #8c8c8c;
+  --conecta-color-focus: #0f6fa8;
+  --conecta-color-danger: #b3261e;
+  --conecta-color-danger-subtle: #fbeae9;
+  --conecta-color-success: #016549;
+  --conecta-color-success-subtle: #e3f2ec;
+  --conecta-color-warning: #9a5b00;
+  --conecta-color-warning-subtle: #fbf0df;
+  --conecta-color-info: #0f6fa8;
+  --conecta-color-info-subtle: #e7f1f7;
+
+  --conecta-font-brand: 'Comfortaa', system-ui, sans-serif;
+  --conecta-font-product: 'Montserrat', system-ui, sans-serif;
+  --conecta-font-mono: 'SFMono-Regular', Consolas, monospace;
+  --conecta-font-size-caption: 0.75rem;
+  --conecta-font-size-body-small: 0.8125rem;
+  --conecta-font-size-body: 0.875rem;
+  --conecta-font-size-body-large: 1rem;
+  --conecta-font-size-heading-small: 1.125rem;
+  --conecta-font-size-heading: 1.25rem;
+  --conecta-font-size-display: 1.75rem;
+  --conecta-font-size-display-large: 2.25rem;
+  --conecta-font-weight-regular: 400;
+  --conecta-font-weight-medium: 500;
+  --conecta-font-weight-semibold: 600;
+  --conecta-font-weight-bold: 700;
+  --conecta-line-height-compact: 1.2;
+  --conecta-line-height-default: 1.5;
+  --conecta-line-height-relaxed: 1.65;
+  --conecta-letter-spacing-tight: -0.02em;
+  --conecta-letter-spacing-normal: 0;
+  --conecta-letter-spacing-wide: 0.03em;
+  --conecta-letter-spacing-wider: 0.04em;
+  --conecta-letter-spacing-widest: 0.08em;
+
+  --conecta-space-0: 0;
+  --conecta-space-1: 0.25rem;
+  --conecta-space-2: 0.5rem;
+  --conecta-space-3: 0.75rem;
+  --conecta-space-4: 1rem;
+  --conecta-space-6: 1.5rem;
+  --conecta-space-8: 2rem;
+  --conecta-space-12: 3rem;
+
+  --conecta-size-control-compact: 2.75rem;
+  --conecta-size-control-small: 2.75rem;
+  --conecta-size-control-medium: 2.75rem;
+  --conecta-size-control-large: 3rem;
+  --conecta-size-icon-small: 1rem;
+  --conecta-size-icon-medium: 1.125rem;
+  --conecta-size-icon-large: 1.25rem;
+  --conecta-size-touch-target: 2.75rem;
+  --conecta-size-content-small: 20rem;
+  --conecta-size-content-medium: 40rem;
+  --conecta-size-content-large: 64rem;
+  --conecta-breakpoint-compact: 30rem;
+  --conecta-breakpoint-mobile: 40rem;
+  --conecta-breakpoint-tablet: 48rem;
+  --conecta-breakpoint-desktop: 64rem;
+  --conecta-z-base: 0;
+  --conecta-z-raised: 1;
+  --conecta-z-sticky: 10;
+  --conecta-z-dropdown: 100;
+  --conecta-z-popover: 120;
+  --conecta-z-tooltip: 150;
+  --conecta-z-overlay: 200;
+  --conecta-z-toast: 300;
+
+  --conecta-radius-small: 0.5rem;
+  --conecta-radius-none: 0;
+  --conecta-radius-medium: 0.75rem;
+  --conecta-radius-large: 1rem;
+  --conecta-radius-full: 9999px;
+  --conecta-border-width-none: 0;
+  --conecta-border-width-thin: 0.0625rem;
+  --conecta-border-width-medium: 0.125rem;
+  --conecta-border-width-thick: 0.25rem;
+  --conecta-elevation-none: none;
+  --conecta-elevation-low: 0 1px 2px rgb(0 0 0 / 6%);
+  --conecta-elevation-medium: 0 4px 12px rgb(0 0 0 / 10%);
+  --conecta-elevation-high: 0 8px 24px rgb(0 0 0 / 14%);
+  --conecta-motion-duration-instant: 0ms;
+  --conecta-motion-duration-fast: 120ms;
+  --conecta-motion-duration-normal: 200ms;
+  --conecta-motion-duration-slow: 320ms;
+  --conecta-motion-duration-deliberate: 700ms;
+  --conecta-motion-duration-loop: 1500ms;
+  --conecta-motion-easing-linear: linear;
+  --conecta-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --conecta-motion-easing-entrance: cubic-bezier(0, 0, 0.2, 1);
+  --conecta-motion-easing-exit: cubic-bezier(0.4, 0, 1, 1);
+  --conecta-motion-interaction: var(--conecta-motion-duration-fast) var(--conecta-motion-easing-standard);
+  --conecta-motion-enter: var(--conecta-motion-duration-normal) var(--conecta-motion-easing-entrance);
+  --conecta-motion-exit: var(--conecta-motion-duration-normal) var(--conecta-motion-easing-exit);
+  --conecta-state-hover-background: var(--conecta-color-background-subtle);
+  --conecta-state-focus-color: var(--conecta-color-focus);
+  --conecta-state-disabled-color: var(--conecta-color-content-disabled);
+  --conecta-state-disabled-background: var(--conecta-color-background-page);
+  --conecta-state-error-color: var(--conecta-color-danger);
+  --conecta-state-error-background: var(--conecta-color-danger-subtle);
+  --conecta-state-success-color: var(--conecta-color-success);
+  --conecta-state-warning-color: var(--conecta-color-warning);
+  --conecta-state-focus-ring-width: var(--conecta-border-width-medium);
+  --conecta-state-focus-ring-offset: var(--conecta-border-width-medium);
+}
+
+:root,
+[data-conecta-theme='negocios'] {
+  --conecta-color-action-primary: #740301;
+  --conecta-color-action-primary-hover: #5f0201;
+  --conecta-color-action-primary-active: #4a0201;
+  --conecta-color-on-action-primary: #ffffff;
+  --conecta-color-on-action-primary-hover: #ffffff;
+  --conecta-color-on-action-primary-active: #ffffff;
+  --conecta-color-brand: #740301;
+  --conecta-color-brand-content: #740301;
+  --conecta-color-data-primary: #740301;
+  --conecta-color-on-brand: #ffffff;
+  --conecta-color-brand-subtle: #f7eaea;
+  --conecta-color-on-brand-subtle: #740301;
+}
+
+[data-conecta-theme='recomenda'] {
+  --conecta-color-action-primary: #f58224;
+  --conecta-color-action-primary-hover: #e27116;
+  --conecta-color-action-primary-active: #cb610e;
+  --conecta-color-on-action-primary: #111111;
+  --conecta-color-on-action-primary-hover: #111111;
+  --conecta-color-on-action-primary-active: #111111;
+  --conecta-color-brand: #f58224;
+  --conecta-color-brand-content: #964600;
+  --conecta-color-data-primary: #cb610e;
+  --conecta-color-on-brand: #111111;
+  --conecta-color-brand-subtle: #fff1e6;
+  --conecta-color-on-brand-subtle: #713708;
+}
+
+[data-conecta-theme='capital'] {
+  --conecta-color-action-primary: #016549;
+  --conecta-color-action-primary-hover: #01523c;
+  --conecta-color-action-primary-active: #014130;
+  --conecta-color-on-action-primary: #ffffff;
+  --conecta-color-on-action-primary-hover: #ffffff;
+  --conecta-color-on-action-primary-active: #ffffff;
+  --conecta-color-brand: #016549;
+  --conecta-color-brand-content: #016549;
+  --conecta-color-data-primary: #016549;
+  --conecta-color-on-brand: #ffffff;
+  --conecta-color-brand-subtle: #e6f0ed;
+  --conecta-color-on-brand-subtle: #016549;
+}
+
+[data-conecta-theme='pontos'] {
+  --conecta-color-action-primary: #d64012;
+  --conecta-color-action-primary-hover: #cb3e10;
+  --conecta-color-action-primary-active: #b5360d;
+  --conecta-color-on-action-primary: #ffffff;
+  --conecta-color-on-action-primary-hover: #ffffff;
+  --conecta-color-on-action-primary-active: #ffffff;
+  --conecta-color-brand: #e14915;
+  --conecta-color-brand-content: #a8320d;
+  --conecta-color-data-primary: #e14915;
+  --conecta-color-on-brand: #111111;
+  --conecta-color-brand-subtle: #fcede8;
+  --conecta-color-on-brand-subtle: #762409;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

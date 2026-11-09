@@ -19,7 +19,8 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background cursor-pointer data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      // Conecta DS Select: mesmo campo do Input, com destaque na cor de ação ativa.
+      "flex h-11 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground cursor-pointer transition-[border-color,box-shadow] data-[placeholder]:text-muted-foreground hover:border-[color:var(--conecta-color-action-primary-active)] focus:outline-none focus-visible:border-[color:var(--conecta-color-action-primary-active)] focus-visible:shadow-[0_0_0_0.125rem_color-mix(in_srgb,var(--conecta-color-action-primary-active)_22%,transparent)] data-[state=open]:border-[color:var(--conecta-color-action-primary-active)] disabled:cursor-not-allowed disabled:bg-muted disabled:text-[color:var(--conecta-color-content-disabled)] [&>span]:line-clamp-1",
       className,
     )}
     {...props}

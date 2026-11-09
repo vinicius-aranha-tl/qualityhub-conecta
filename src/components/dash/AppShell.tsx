@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PERIOD_LABEL, requestForcedRefresh, useFilters, type PeriodKey } from "@/data/useDashboard";
 import { cn } from "@/lib/utils";
 
-export const APP_VERSION = "0.9.6";
+export const APP_VERSION = "0.10.0";
 
 const NAV = [
   { to: "/visao-geral", label: "Visão geral", icon: LayoutDashboard, admin: false },
@@ -37,17 +37,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <div className="flex items-center justify-between border-b border-sidebar-border bg-sidebar px-4 py-2 md:hidden">
-        <BrandLogo className="w-40 invert hue-rotate-180" />
-        <Button variant="ghost" size="icon" className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" aria-label={mobileMenuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={mobileMenuOpen} aria-controls="quality-navigation" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <BrandLogo className="w-40" />
+        <Button variant="ghost" size="icon" className="text-sidebar-foreground hover:bg-subtle hover:text-foreground" aria-label={mobileMenuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={mobileMenuOpen} aria-controls="quality-navigation" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
           {mobileMenuOpen ? <X /> : <Menu />}
         </Button>
       </div>
       <aside id="quality-navigation" className={cn("w-full shrink-0 flex-col border-b border-sidebar-border bg-sidebar px-4 pb-4 md:sticky md:top-0 md:flex md:h-screen md:w-60 md:border-r md:border-b-0 md:px-4 md:py-6", mobileMenuOpen ? "flex" : "hidden")}>
-        <BrandLogo className="mb-7 hidden w-full invert hue-rotate-180 md:block" />
+        <BrandLogo className="mb-7 hidden w-full md:block" />
         <nav aria-label="Navegação principal" className="flex flex-col gap-1">
           {NAV.filter((n) => (!n.admin || isAdmin) && (n.to !== "/bugs" || canEdit)).map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} onClick={() => setMobileMenuOpen(false)} className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent" activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground font-semibold" }}>
-              <Icon className="h-5 w-5" />
+            <Link key={to} to={to} onClick={() => setMobileMenuOpen(false)} className="group flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-subtle hover:text-foreground data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-accent-foreground">
+              <Icon className="h-5 w-5 text-brand" />
               {label}
             </Link>
           ))}
@@ -55,23 +55,23 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mt-5 grid gap-2 border-t border-sidebar-border px-2 pt-4 md:mt-auto">
           {user && (
             <div className="flex min-w-0 items-center gap-3 text-xs">
-              <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#34373c] text-sm font-semibold text-white">{user.email.slice(0, 2).toUpperCase()}</span>
-              <div className="min-w-0"><div className="truncate font-semibold text-sidebar-foreground">{user.email}</div>
-              <div className="mt-1 text-sidebar-foreground/70">{user.role === "admin" ? "Administrador" : "Visualização"} · Uso interno</div></div>
+              <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-sm font-semibold text-on-brand-subtle">{user.email.slice(0, 2).toUpperCase()}</span>
+              <div className="min-w-0"><div className="truncate font-semibold text-foreground">{user.email}</div>
+              <div className="mt-1 text-muted-foreground">{user.role === "admin" ? "Administrador" : "Visualização"} · Uso interno</div></div>
             </div>
           )}
-          <Button variant="ghost" size="sm" className="justify-start px-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={signOut}><LogOut className="h-4 w-4" /> Sair</Button>
-          <div className="text-xs text-sidebar-foreground/70">v{APP_VERSION}</div>
+          <Button variant="ghost" size="sm" className="justify-start px-2 text-sidebar-foreground hover:bg-subtle hover:text-foreground" onClick={signOut}><LogOut className="h-4 w-4" /> Sair</Button>
+          <div className="px-2 text-xs text-muted-foreground">v{APP_VERSION}</div>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="z-10 flex flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-4 sm:px-8 xl:px-10">
+        <header className="z-10 flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-3 sm:px-8 xl:px-10">
           <div className="mr-auto min-w-32">
             <div className="text-xs text-muted-foreground">Período selecionado</div>
             <div className="mt-1 text-sm font-semibold">{PERIOD_LABEL[filters.period]}</div>
           </div>
           <Select value={filters.period} onValueChange={(v) => setFilters({ ...filters, period: v as PeriodKey })}>
-            <SelectTrigger className="h-9 w-44" aria-label="Período"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-44" aria-label="Período"><SelectValue /></SelectTrigger>
             <SelectContent>
               {(Object.keys(PERIOD_LABEL) as PeriodKey[]).map((k) => <SelectItem key={k} value={k}>{PERIOD_LABEL[k]}</SelectItem>)}
             </SelectContent>

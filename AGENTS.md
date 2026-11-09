@@ -6,3 +6,4 @@
 - The main administrator is configured on the backend; additional administrator and viewer accounts are created by an administrator and stored in MongoDB. Only administrators may edit; legacy editor accounts are read-only. Enforce roles on the backend; public signup is disabled; app pages live under `src/routes/_authenticated/`.
 - Global period/origin filters live in `FiltersProvider` (`src/data/useDashboard.tsx`).
 - App version constant is `APP_VERSION` in `src/components/dash/AppShell.tsx`; bump it on meaningful changes.
+- Visual follows the Conecta Design System (github.com/Conecta-ag/conecta-DS, branch hml): tokens are vendored in `src/conecta-tokens.css` and mapped to Tailwind/shadcn names in `src/styles.css`; use those classes or `--conecta-*` tokens, never hardcoded colors. Theme is set by `data-conecta-theme` on `<html>`.

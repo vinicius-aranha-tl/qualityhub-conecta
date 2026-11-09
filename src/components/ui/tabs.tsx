@@ -12,7 +12,8 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
+      // Conecta DS Tabs (variante pill).
+      "inline-flex items-center justify-center gap-1 rounded-lg bg-muted p-1 text-[color:var(--conecta-color-content-secondary)]",
       className,
     )}
     {...props}
@@ -27,7 +28,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
+      "inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold cursor-pointer transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:cursor-not-allowed disabled:text-[color:var(--conecta-color-content-disabled)] data-[state=active]:bg-card data-[state=active]:text-on-brand-subtle data-[state=active]:shadow-sm",
       className,
     )}
     {...props}
