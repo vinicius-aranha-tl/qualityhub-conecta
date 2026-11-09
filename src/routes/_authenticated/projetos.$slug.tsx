@@ -162,6 +162,7 @@ function SourcesForm({ project }: { project: Project }) {
                     {f.ok ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" /> : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />}
                     <span className="font-mono">quality-hub/{f.file}</span>
                     <span className={f.ok ? "text-muted-foreground" : "text-danger"}>{f.ok ? `${f.records ?? "?"} registros${f.updatedAt ? ` · atualizado em ${new Date(f.updatedAt).toLocaleString("pt-BR")}` : ""}` : f.message}</span>
+                    {f.ok && f.message && <span className="text-warning">{f.message}</span>}
                   </div>
                 ))}
               </div>
