@@ -4,16 +4,18 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  // Conecta DS Badge: pílula com fundo suave e texto na cor semântica.
+  "inline-flex min-h-6 w-fit items-center justify-center whitespace-nowrap rounded-full border border-transparent px-3 py-1 text-xs font-semibold leading-tight",
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground shadow hover:bg-primary/80",
-        secondary:
-          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        destructive:
-          "border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80",
-        outline: "text-foreground",
+        default: "bg-brand-subtle text-on-brand-subtle",
+        secondary: "bg-muted text-[color:var(--conecta-color-content-secondary)]",
+        destructive: "bg-danger-subtle text-danger",
+        success: "bg-success-subtle text-success",
+        warning: "bg-warning-subtle text-warning",
+        info: "bg-info-subtle text-info",
+        outline: "border-border text-foreground",
       },
     },
     defaultVariants: {

@@ -1,31 +1,35 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@import "./conecta-tokens.css";
 
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system definition.
+ * Tema do Quality Hub sobre o Conecta Design System.
  *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
+ * Os valores vêm dos tokens --conecta-* (src/conecta-tokens.css, cópia de
+ * @conecta-ag/tokens). As variáveis abaixo apenas traduzem esses tokens para os
+ * nomes usados pelos componentes shadcn/Tailwind (bg-primary, text-muted-foreground…).
+ * Não use cores fixas nos componentes: use estas classes ou os tokens --conecta-*.
  *
- * The :root and .dark blocks define the actual color values using oklch.
- * The theme uses reusable CSS color tokens.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ * O tema do produto é escolhido pelo atributo data-conecta-theme no <html>
+ * (negocios — padrão —, recomenda, capital ou pontos).
  */
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-sm: var(--conecta-radius-small);
+  --radius-md: var(--conecta-radius-small);
+  --radius-lg: var(--conecta-radius-medium);
+  --radius-xl: var(--conecta-radius-medium);
+  --radius-2xl: var(--conecta-radius-large);
+  --radius-3xl: var(--conecta-radius-large);
+  --radius-4xl: var(--conecta-radius-large);
+  --shadow-xs: var(--conecta-elevation-low);
+  --shadow-sm: var(--conecta-elevation-low);
+  --shadow: var(--conecta-elevation-low);
+  --shadow-md: var(--conecta-elevation-medium);
+  --shadow-lg: var(--conecta-elevation-high);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -34,6 +38,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--conecta-color-action-primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -60,108 +65,77 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-success: var(--success);
+  --color-success-subtle: var(--conecta-color-success-subtle);
   --color-warning: var(--warning);
+  --color-warning-subtle: var(--conecta-color-warning-subtle);
   --color-danger: var(--danger);
+  --color-danger-subtle: var(--conecta-color-danger-subtle);
+  --color-info: var(--conecta-color-info);
+  --color-info-subtle: var(--conecta-color-info-subtle);
+  --color-brand: var(--conecta-color-brand);
+  --color-brand-subtle: var(--conecta-color-brand-subtle);
+  --color-on-brand-subtle: var(--conecta-color-on-brand-subtle);
+  --color-institutional: var(--conecta-color-brand-institutional);
+  --color-subtle: var(--conecta-color-background-subtle);
   --color-product: var(--product);
   --color-automation: var(--automation);
   --color-projection: var(--projection);
-  --font-sans: var(--app-font-sans);
-  --font-display: var(--app-font-display);
-  --font-mono: var(--app-font-mono);
-}
-
-/* Quality Hub palette: neutral light chrome and dark metric surfaces. */
-html:root {
-  --background: #fafafa; --foreground: #202124;
-  --card: #ffffff; --card-foreground: #202124;
-  --popover: #ffffff; --popover-foreground: #202124;
-  --primary: #111111; --primary-foreground: #ffffff;
-  --secondary: #edeef0; --secondary-foreground: #202124;
-  --muted: #edeef0; --muted-foreground: #686b72;
-  --accent: #e9ebee; --accent-foreground: #202124;
-  --destructive: #be2838; --destructive-foreground: #ffffff;
-  --border: #dedfe2; --input: #dedfe2; --ring: #397cc9;
-  --metric-orange: #ffb76b; --metric-mint: #72dfb0;
-  --metric-blue: #83b7ff; --metric-purple: #c4a3ff;
-  --metric-cyan: #65d4dc; --metric-red: #ff7b86;
-  --success: #167352; --warning: #8a5109; --danger: #b82f40;
-  --product: var(--metric-blue); --automation: var(--metric-orange); --projection: var(--metric-purple);
-  --gauge-track: #50545a;
-  --chart-1: var(--metric-red); --chart-2: var(--metric-orange);
-  --chart-3: var(--metric-mint); --chart-4: var(--metric-blue); --chart-5: var(--metric-purple);
-  --sidebar: #34373c; --sidebar-foreground: #f5f5f5;
-  --sidebar-primary: #111111; --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #4a4e55; --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #555a61; --sidebar-ring: #83b7ff;
-}
-
-.quality-surface {
-  --background: #34373c; --foreground: #f5f5f6;
-  --card: #34373c; --card-foreground: #f5f5f6;
-  --muted: #41454b; --muted-foreground: #c9cbd0;
-  --accent: #494d53; --accent-foreground: #ffffff;
-  --border: #50545a; --input: #676b72;
-  --success: var(--metric-mint); --warning: var(--metric-orange);
-  --danger: var(--metric-red); --destructive: var(--metric-red);
-}
-.quality-surface input:not([type="checkbox"]):not([type="radio"]),
-.quality-surface textarea {
-  background: #ffffff;
-  border-color: #dedfe2;
-  color: #202124;
-}
-.quality-surface input::placeholder, .quality-surface textarea::placeholder { color: #686b72; }
-.quality-surface :is(.grid, .overflow-x-auto) { min-width: 0; max-width: 100%; }
-
-:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+  --font-sans: var(--conecta-font-product);
+  --font-display: var(--conecta-font-product);
+  --font-brand: var(--conecta-font-brand);
+  --font-mono: var(--conecta-font-mono);
 }
 
 :root {
-  --radius: 0.75rem;
-  --background: oklch(0.16 0.012 250);
-  --foreground: oklch(0.95 0.005 250);
-  --card: oklch(0.205 0.014 250);
-  --card-foreground: oklch(0.95 0.005 250);
-  --popover: oklch(0.23 0.016 250);
-  --popover-foreground: oklch(0.95 0.005 250);
-  --primary: oklch(0.7 0.15 245);
-  --primary-foreground: oklch(0.15 0.02 250);
-  --secondary: oklch(0.26 0.016 250);
-  --secondary-foreground: oklch(0.92 0.005 250);
-  --muted: oklch(0.24 0.014 250);
-  --muted-foreground: oklch(0.68 0.015 250);
-  --accent: oklch(0.28 0.02 250);
-  --accent-foreground: oklch(0.95 0.005 250);
-  --destructive: oklch(0.64 0.21 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.3 0.015 250);
-  --input: oklch(0.3 0.015 250);
-  --ring: oklch(0.7 0.15 245);
-  --success: oklch(0.74 0.17 152);
-  --warning: oklch(0.83 0.16 88);
-  --danger: oklch(0.65 0.21 25);
-  --product: oklch(0.68 0.16 245);
-  --automation: oklch(0.75 0.17 55);
-  --projection: oklch(0.72 0.19 350);
-  --gauge-track: oklch(0.28 0.014 250);
-  --chart-1: oklch(0.65 0.21 25);
-  --chart-2: oklch(0.75 0.17 55);
-  --chart-3: oklch(0.83 0.16 88);
-  --chart-4: oklch(0.68 0.16 245);
-  --chart-5: oklch(0.72 0.19 350);
-  --sidebar: oklch(0.18 0.013 250);
-  --sidebar-foreground: oklch(0.9 0.005 250);
-  --sidebar-primary: oklch(0.7 0.15 245);
-  --sidebar-primary-foreground: oklch(0.15 0.02 250);
-  --sidebar-accent: oklch(0.25 0.018 250);
-  --sidebar-accent-foreground: oklch(0.97 0.005 250);
-  --sidebar-border: oklch(0.27 0.014 250);
-  --sidebar-ring: oklch(0.7 0.15 245);
-  --app-font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --app-font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
-  --app-font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius: var(--conecta-radius-medium);
+  --background: var(--conecta-color-background-page);
+  --foreground: var(--conecta-color-content-primary);
+  --card: var(--conecta-color-background-surface);
+  --card-foreground: var(--conecta-color-content-primary);
+  --popover: var(--conecta-color-background-surface);
+  --popover-foreground: var(--conecta-color-content-primary);
+  --primary: var(--conecta-color-action-primary);
+  --primary-foreground: var(--conecta-color-on-action-primary);
+  --secondary: var(--conecta-color-background-subtle);
+  --secondary-foreground: var(--conecta-color-content-primary);
+  --muted: var(--conecta-color-background-page);
+  --muted-foreground: var(--conecta-color-content-muted);
+  --accent: var(--conecta-state-hover-background);
+  --accent-foreground: var(--conecta-color-content-primary);
+  --destructive: var(--conecta-color-danger);
+  --destructive-foreground: var(--conecta-color-content-inverse);
+  --border: var(--conecta-color-border-subtle);
+  --input: var(--conecta-color-border-default);
+  --ring: var(--conecta-color-focus);
+  --success: var(--conecta-color-success);
+  --warning: var(--conecta-color-warning);
+  --danger: var(--conecta-color-danger);
+  /* Séries de dados: cor de dados do tema + cores semânticas do design system. */
+  --product: var(--conecta-color-info);
+  --automation: var(--conecta-color-data-primary);
+  --projection: var(--conecta-color-brand-institutional);
+  --gauge-track: var(--conecta-color-border-subtle);
+  --chart-1: var(--conecta-color-danger);
+  --chart-2: var(--conecta-color-warning);
+  --chart-3: var(--conecta-color-success);
+  --chart-4: var(--conecta-color-info);
+  --chart-5: var(--conecta-color-brand-institutional);
+  --sidebar: var(--conecta-color-background-surface);
+  --sidebar-foreground: var(--conecta-color-content-secondary);
+  --sidebar-primary: var(--conecta-color-action-primary);
+  --sidebar-primary-foreground: var(--conecta-color-on-action-primary);
+  --sidebar-accent: var(--conecta-color-brand-subtle);
+  --sidebar-accent-foreground: var(--conecta-color-on-brand-subtle);
+  --sidebar-border: var(--conecta-color-border-subtle);
+  --sidebar-ring: var(--conecta-color-focus);
+}
+
+/* Painéis de métricas: superfície branca com elevação baixa (Card "elevated"). */
+.quality-surface :is(.grid, .overflow-x-auto) { min-width: 0; max-width: 100%; }
+
+:focus-visible {
+  outline: var(--conecta-state-focus-ring-width) solid var(--conecta-state-focus-color);
+  outline-offset: var(--conecta-state-focus-ring-offset);
 }
 
 @layer base {
@@ -170,12 +144,17 @@ html:root {
   }
 
   body {
+    min-width: 20rem;
     background-color: var(--color-background);
-    color: var(--color-foreground);
-    font-family: var(--app-font-sans);
+    color: var(--conecta-color-content-secondary);
+    font-family: var(--conecta-font-product);
+    font-size: var(--conecta-font-size-body);
+    line-height: var(--conecta-line-height-default);
   }
+
   h1, h2, h3 {
-    font-family: var(--app-font-display);
-    letter-spacing: -0.02em;
+    color: var(--conecta-color-content-primary);
+    font-family: var(--conecta-font-product);
+    letter-spacing: var(--conecta-letter-spacing-tight);
   }
 }

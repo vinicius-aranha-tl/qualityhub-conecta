@@ -53,11 +53,11 @@ function ProjectsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {q.data.map((p) => (
-            <Link key={p.id} to="/projetos/$slug" params={{ slug: p.slug }} className="quality-surface group rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm transition-colors hover:border-[#83b7ff]">
+            <Link key={p.id} to="/projetos/$slug" params={{ slug: p.slug }} className="quality-surface group rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm transition-colors hover:border-brand">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary text-primary"><FolderKanban className="h-5 w-5" /></div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-subtle text-brand"><FolderKanban className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-display font-semibold group-hover:text-product">{p.name}</div>
+                  <div className="truncate font-display font-semibold group-hover:text-brand">{p.name}</div>
                   <div className="text-xs text-muted-foreground">Criado em {fmtDate(p.created_at.slice(0, 10))}</div>
                 </div>
                 {isAdmin && (
