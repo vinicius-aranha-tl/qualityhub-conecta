@@ -13,7 +13,7 @@ export interface Column<T> {
   width?: number;
 }
 
-export function DataTable<T extends Record<string, unknown>>({ rows, columns, initialSort, empty = "Nenhum registro.", detailView = false }: { rows: T[]; columns: Column<T>[]; initialSort?: { key: keyof T & string; dir: "asc" | "desc" }; empty?: string; detailView?: boolean }) {
+export function DataTable<T extends Record<string, unknown>>({ rows, columns, initialSort, empty = "Nenhum registro.", detailView = false, onRowSelect }: { rows: T[]; columns: Column<T>[]; initialSort?: { key: keyof T & string; dir: "asc" | "desc" }; empty?: string; detailView?: boolean; /** Abre um detalhe próprio no lugar do modal padrão. */ onRowSelect?: (row: T) => void }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<T | null>(null);
   const [sort, setSort] = useState(initialSort ?? null);
@@ -66,7 +66,7 @@ export function DataTable<T extends Record<string, unknown>>({ rows, columns, in
                 <tr key={i} className="border-t border-border hover:bg-accent/40">
                   {columns.map((c) => (
                     <td key={c.key} className={`border-r border-border px-3 py-2 align-top last:border-r-0 ${c.numeric ? "text-right font-mono" : ""} ${c.className ?? ""}`}>
-                      {detailView ? (c.key === "title" || c.key === "error" || c.key === "detail" ? <button type="button" onClick={() => setSelected(row)} className="block w-full truncate text-left underline-offset-4 hover:text-product hover:underline focus-visible:outline focus-visible:outline-2" title="Ver detalhes completos" aria-label={`Ver detalhes: ${String(row[c.key] || c.label)}`}>{c.render ? c.render(row) : String(row[c.key] || "—")}</button> : <span className="block truncate">{c.render ? c.render(row) : String(row[c.key] ?? "—")}</span>) : (c.render ? c.render(row) : String(row[c.key] ?? "—"))}
+                      {detailView ? (c.key === "title" || c.key === "error" || c.key === "detail" ? <button type="button" onClick={() => (onRowSelect ? onRowSelect(row) : setSelected(row))} className="block w-full truncate text-left underline-offset-4 hover:text-product hover:underline focus-visible:outline focus-visible:outline-2" title="Ver detalhes completos" aria-label={`Ver detalhes: ${String(row[c.key] || c.label)}`}>{c.render ? c.render(row) : String(row[c.key] || "—")}</button> : <span className="block truncate">{c.render ? c.render(row) : String(row[c.key] ?? "—")}</span>) : (c.render ? c.render(row) : String(row[c.key] ?? "—"))}
                     </td>
                   ))}
                 </tr>

@@ -1,5 +1,10 @@
+/** Frentes testadas no projeto: API e UI, só API (back-end) ou só UI (front-end). */
+export type ProjectFronts = "api-ui" | "api" | "ui";
+export const FRONTS_LABEL: Record<ProjectFronts, string> = { "api-ui": "API e UI", api: "Só API (back-end)", ui: "Só UI (front-end)" };
+/** Produtos (abas) de um projeto conforme as frentes. */
+export const frontProducts = (fronts: ProjectFronts): ("api" | "ui")[] => (fronts === "api" ? ["api"] : fronts === "ui" ? ["ui"] : ["api", "ui"]);
 export interface ProjectRecord {
-  id: string; name: string; slug: string; description: string;
+  id: string; name: string; slug: string; description: string; fronts: ProjectFronts;
   api_repo_owner: string | null; api_repo_name: string | null; api_branch: string;
   ui_repo_owner: string | null; ui_repo_name: string | null; ui_branch: string;
   api_executions_url: string | null; api_evolution_url: string | null;
@@ -8,13 +13,13 @@ export interface ProjectRecord {
 }
 
 export interface WidgetRecord { id: string; project_id: string | null; product: string; widget_type: string; title: string; width: "half" | "full"; position: number }
-type BackendProject = { id: string; name: string; slug: string; description: string; apiRepoOwner: string | null; apiRepoName: string | null; apiBranch: string; uiRepoOwner: string | null; uiRepoName: string | null; uiBranch: string; apiExecutionsUrl: string | null; apiEvolutionUrl: string | null; uiExecutionsUrl: string | null; uiEvolutionUrl: string | null; createdAt: string; lastSyncedAt: string | null; lastSyncError: string | null };
+type BackendProject = { id: string; name: string; slug: string; description: string; fronts?: string | null; apiRepoOwner: string | null; apiRepoName: string | null; apiBranch: string; uiRepoOwner: string | null; uiRepoName: string | null; uiBranch: string; apiExecutionsUrl: string | null; apiEvolutionUrl: string | null; uiExecutionsUrl: string | null; uiEvolutionUrl: string | null; createdAt: string; lastSyncedAt: string | null; lastSyncError: string | null };
 type BackendWidget = { id: string; projectId: string | null; product: string; widgetType: string; title: string; width: "half" | "full"; position: number };
 export function mapProject(p: BackendProject): ProjectRecord {
-  return { id: p.id, name: p.name, slug: p.slug, description: p.description, api_repo_owner: p.apiRepoOwner, api_repo_name: p.apiRepoName, api_branch: p.apiBranch, ui_repo_owner: p.uiRepoOwner, ui_repo_name: p.uiRepoName, ui_branch: p.uiBranch, api_executions_url: p.apiExecutionsUrl, api_evolution_url: p.apiEvolutionUrl, ui_executions_url: p.uiExecutionsUrl, ui_evolution_url: p.uiEvolutionUrl, created_at: p.createdAt, last_synced_at: p.lastSyncedAt, last_sync_error: p.lastSyncError };
+  return { id: p.id, name: p.name, slug: p.slug, description: p.description, fronts: p.fronts === "api" || p.fronts === "ui" ? p.fronts : "api-ui", api_repo_owner: p.apiRepoOwner, api_repo_name: p.apiRepoName, api_branch: p.apiBranch, ui_repo_owner: p.uiRepoOwner, ui_repo_name: p.uiRepoName, ui_branch: p.uiBranch, api_executions_url: p.apiExecutionsUrl, api_evolution_url: p.apiEvolutionUrl, ui_executions_url: p.uiExecutionsUrl, ui_evolution_url: p.uiEvolutionUrl, created_at: p.createdAt, last_synced_at: p.lastSyncedAt, last_sync_error: p.lastSyncError };
 }
 function mapWidget(w: BackendWidget): WidgetRecord { return { id: w.id, project_id: w.projectId, product: w.product, widget_type: w.widgetType, title: w.title, width: w.width, position: w.position }; }
-export function projectInput(p: ProjectRecord) { return { name: p.name, slug: p.slug, description: p.description, apiRepoOwner: p.api_repo_owner, apiRepoName: p.api_repo_name, apiBranch: p.api_branch, uiRepoOwner: p.ui_repo_owner, uiRepoName: p.ui_repo_name, uiBranch: p.ui_branch }; }
+export function projectInput(p: ProjectRecord) { return { name: p.name, slug: p.slug, description: p.description, fronts: p.fronts, apiRepoOwner: p.api_repo_owner, apiRepoName: p.api_repo_name, apiBranch: p.api_branch, uiRepoOwner: p.ui_repo_owner, uiRepoName: p.ui_repo_name, uiBranch: p.ui_branch }; }
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/backend${path}`, { ...init, credentials: "same-origin", headers: { "Content-Type": "application/json", ...init?.headers } });
   if (!response.ok) { const data = await response.json().catch(() => null) as { message?: string; title?: string } | null; throw new Error(data?.message ?? data?.title ?? `Erro ao comunicar com o servidor (${response.status}).`); }

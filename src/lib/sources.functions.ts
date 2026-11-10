@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireBackendAuth } from "@/lib/backend-auth";
 import { mapProject } from "@/lib/backend-client";
-import type { EvolutionPoint, Execution, Product } from "@/lib/metrics";
-import { countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeLifecycle, normalizeReasons, normalizeStability, REASONS_FILE, QUALITY_HUB_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
+import type { ContractCoverage, EvolutionPoint, Execution, Product } from "@/lib/metrics";
+import { CONTRACT_COVERAGE_FILE, countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeContractCoverage, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeLifecycle, normalizeReasons, normalizeStability, REASONS_FILE, QUALITY_HUB_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 
 export type SourceKind = "executions" | "evolution";
 export interface SourceStatus {
@@ -108,6 +108,8 @@ export interface ProjectData {
     reasons: { status: SourceStatus; file: string; data: { failures: SpecialFailureRow[]; reasons: ReasonRow[] } | null };
     lifecycle: { status: SourceStatus; file: string; data: SpecialFailureRow[] | null };
     testHistory?: { status: SourceStatus; file: string; data: DatedFailureHistory | null };
+    /** Só API: contrato em produção (Swagger) e quais condições têm teste. */
+    contract?: { status: SourceStatus; file: string; data: ContractCoverage | null };
   }>;
   fetchedAt: string;
   sourceFingerprint?: string;
@@ -166,17 +168,19 @@ export const loadDashboardData = createServerFn({ method: "POST" })
         evolution[product] = ev.data ?? [];
         const ds = `${p.name} · ${product.toUpperCase()}`;
         const u = (f: string) => (r ? contentsUrl(r.owner, r.name, r.branch, f) : null);
-        const [st, rs, lc, th] = await Promise.all([
+        const [st, rs, lc, th, ct] = await Promise.all([
           readSource(u(STABILITY_FILE), (raw) => normalizeStability(raw, ds), force),
           readSource(u(REASONS_FILE), (raw) => normalizeReasons(requireScheduledScope(raw), ds), force, (d) => d.failures.length),
           readSource(u(LIFECYCLE_FILE), (raw) => normalizeLifecycle(requireScheduledScope(raw), ds), force),
           readSource(u(TEST_HISTORY_FILE), normalizeDatedFailures, force, d => d.failures.length, true),
+          product === "api" ? readSource(u(CONTRACT_COVERAGE_FILE), normalizeContractCoverage, force, (d) => d.conditions.length, true) : Promise.resolve(null),
         ]);
         special[product] = {
           stability: { ...st, file: STABILITY_FILE },
           reasons: { ...rs, file: REASONS_FILE },
           lifecycle: { ...lc, file: LIFECYCLE_FILE },
           testHistory: { ...th, file: TEST_HISTORY_FILE },
+          ...(ct ? { contract: { ...ct, file: CONTRACT_COVERAGE_FILE } } : {}),
         };
       }
       const failed = (["api", "ui"] as const).some(product => sources[product].executions.mode === "error" || sources[product].evolution.mode === "error");

@@ -11,14 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
-import { buildSpecial, PERIOD_LABEL, useDashboardData, useFilters } from "@/data/useDashboard";
-import { exportDashboardPdf } from "@/lib/pdfExport";
+import { PERIOD_LABEL, useDashboardData, useFilters } from "@/data/useDashboard";
+import { exportReportPdf, type ReportSectionKey } from "@/lib/reportPdf";
+import { ReportDialog } from "./ReportDialog";
 import { CHART_KINDS, ChartIcon } from "./chartKinds";
-import { filterExecutions, type Product } from "@/lib/metrics";
+import type { Product } from "@/lib/metrics";
 import { cn } from "@/lib/utils";
 import { EmptyState, Panel } from "./primitives";
 import { SourceBadges } from "./SourceBadges";
-import { DEFAULT_WIDGETS, WIDGET_CATALOG, WidgetBody, type WidgetType } from "./widgets";
+import { DEFAULT_WIDGETS, HIDDEN_WIDGETS, orderPanels, WIDGET_CATALOG, WidgetBody, type WidgetType } from "./widgets";
+
+const ALL_PRODUCTS: Product[] = ["api", "ui"];
 
 interface Widget {
   id: string | null;
@@ -30,7 +33,7 @@ interface Widget {
 
 function defaultsFor(isOverview: boolean): Omit<Widget, "id">[] {
   const list = [...DEFAULT_WIDGETS];
-  if (isOverview) list.splice(3, 0, { widget_type: "project_ranking", width: "full" });
+  if (isOverview) list.splice(list.findIndex((w) => w.widget_type === "daily_execution_volume") + 1, 0, { widget_type: "project_ranking", width: "full" });
   return list.map((w, i) => ({ ...w, title: WIDGET_CATALOG[w.widget_type].defaultTitle, position: i }));
 }
 
@@ -46,9 +49,11 @@ function MetricExplanation({ type }: { type: string }) {
   })}</div>}</>;
 }
 
-export function Dashboard({ projectId, slug, name, onSources }: { projectId: string | null; slug: string | null; name?: string; onSources?: (() => void) | undefined }) {
-  const [product, setProduct] = useState<Product>("api");
+export function Dashboard({ projectId, slug, name, onSources, products = ALL_PRODUCTS }: { projectId: string | null; slug: string | null; name?: string; onSources?: (() => void) | undefined; /** Frentes do projeto: só as abas delas aparecem. */ products?: Product[] }) {
+  const [product, setProduct] = useState<Product>(products[0] ?? "api");
+  useEffect(() => { if (!products.includes(product)) setProduct(products[0] ?? "api"); }, [products, product]);
   const [exporting, setExporting] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const { canEdit } = useAuth();
   const { filters } = useFilters();
@@ -56,37 +61,20 @@ export function Dashboard({ projectId, slug, name, onSources }: { projectId: str
   const uiData = useDashboardData(slug, "ui");
   useEffect(() => { setEditMode(false); }, [projectId]);
 
-  async function exportPdf() {
+  async function exportPdf(sections: ReportSectionKey[]) {
     setExporting(true);
     try {
       if (!apiData.d || !uiData.d) throw new Error("Aguarde os dados de API e UI terminarem de carregar.");
-      const title = name ?? "Visão geral — todos os projetos";
-      await exportDashboardPdf({
-        title,
-        projectReport: true,
-        subtitle: `Período do relatório: ${PERIOD_LABEL[filters.period]}`,
-        sections: !projectId ? (["api", "ui"] as const).map(product => ({ projectName: "Visão geral · todos os projetos", product, data: product === "api" ? apiData.d! : uiData.d! })) : apiData.d.projects.flatMap((project) => (["api", "ui"] as const).map((product) => {
-          const source = product === "api" ? apiData.d! : uiData.d!;
-          const matchingProject = source.projects.find((item) => item.project.id === project.project.id) ?? project;
-          const ids = new Set(matchingProject.executions.map((execution) => execution.triggerId));
-          return {
-            projectName: project.project.name,
-            product,
-            data: {
-              ...source,
-              projects: [matchingProject],
-              valid: source.valid.filter((execution) => ids.has(execution.triggerId)),
-              inPeriod: filterExecutions(source.valid.filter((execution) => ids.has(execution.triggerId)), { product, origins: ["scheduled"], periodDays: source.periodDays, now: new Date() }),
-              allHistory: source.allHistory.filter((execution) => ids.has(execution.triggerId)),
-              evolution: matchingProject.evolution[product],
-              special: buildSpecial([matchingProject], new Date(), undefined, source.periodDays),
-              specialByProduct: buildSpecial([matchingProject], new Date(), product, source.periodDays),
-            },
-          };
-        })),
-        filename: `${(slug ?? "visao-geral")}-${new Date().toISOString().slice(0, 10)}.pdf`,
-      });
+      await exportReportPdf({
+        projectName: name ?? "Visão geral — todos os projetos",
+        periodLabel: PERIOD_LABEL[filters.period],
+        isOverview: !projectId,
+        products: Object.fromEntries(products.map((p) => [p, p === "api" ? apiData.d! : uiData.d!])),
+        include: sections,
+        generatedAt: new Date(),
+      }, `${slug ?? "visao-geral"}-${new Date().toISOString().slice(0, 10)}.pdf`);
       toast.success("PDF gerado");
+      setReportOpen(false);
     } catch (e) {
       toast.error(`Não foi possível gerar o PDF: ${(e as Error).message}`);
     } finally {
@@ -97,24 +85,26 @@ export function Dashboard({ projectId, slug, name, onSources }: { projectId: str
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={product} onValueChange={(v) => setProduct(v as Product)}>
-          <TabsList>
-            <TabsTrigger value="api">API</TabsTrigger>
-            <TabsTrigger value="ui">UI</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {products.length > 1 ? (
+          <Tabs value={product} onValueChange={(v) => setProduct(v as Product)}>
+            <TabsList>
+              {products.map((p) => <TabsTrigger key={p} value={p}>{p.toUpperCase()}</TabsTrigger>)}
+            </TabsList>
+          </Tabs>
+        ) : <span className="rounded-lg bg-muted px-3 py-2 text-sm font-semibold">{product === "api" ? "API (back-end)" : "UI (front-end)"}</span>}
         <div className="flex flex-wrap gap-2">
           {canEdit && <Button size="sm" variant={editMode ? "secondary" : "outline"} aria-pressed={editMode} onClick={() => setEditMode((current) => !current)}><Pencil className="h-4 w-4" /> {editMode ? "Concluir edição" : "Editar painel"}</Button>}
           {canEdit && editMode && onSources && <Button size="sm" variant="outline" onClick={onSources}><Settings2 className="h-4 w-4" /> Fontes do GitHub</Button>}
           <span className="self-center rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground">Monitoramento de testes: HML</span>
-          <Button size="sm" disabled={exporting} onClick={exportPdf}><FileDown className="h-4 w-4" /> {exporting ? "Gerando relatório…" : "Exportar relatório"}</Button>
+          <Button size="sm" disabled={exporting} onClick={() => setReportOpen(true)}><FileDown className="h-4 w-4" /> {exporting ? "Gerando relatório…" : "Exportar relatório"}</Button>
         </div>
       </div>
-      {(["api", "ui"] as const).map((p) => (
+      {products.map((p) => (
         <div key={p} className={cn(p !== product && "hidden")}>
           <ProductDashboard projectId={projectId} slug={slug} product={p} editMode={editMode} />
         </div>
       ))}
+      {reportOpen && <ReportDialog isOverview={!projectId} products={products} generating={exporting} onClose={() => setReportOpen(false)} onGenerate={exportPdf} />}
     </div>
   );
 }
@@ -132,16 +122,8 @@ function ProductDashboard({ projectId, slug, product, editMode }: { projectId: s
   });
   const stored = wq.data ?? [];
   const widgets: Widget[] = stored.length ? stored : defaultsFor(!projectId).map((w) => ({ ...w, id: null }));
-  const displayedWidgets = [...widgets];
-  if (!editMode) {
-    const chartIndex = displayedWidgets.findIndex((widget) => widget.widget_type === "daily_execution_volume");
-    const summaryIndex = displayedWidgets.findIndex((widget) => widget.widget_type === "summary_cards");
-    if (chartIndex >= 0 && summaryIndex >= 0) {
-      const [chart] = displayedWidgets.splice(chartIndex, 1);
-      const position = displayedWidgets.findIndex((widget) => widget.widget_type === "summary_cards");
-      displayedWidgets.splice(position + 1, 0, chart!);
-    }
-  }
+  // Fora da edição, os painéis seguem a ordem padrão (PANEL_ORDER) e os ocultos não aparecem.
+  const displayedWidgets = editMode ? widgets.filter((widget) => !HIDDEN_WIDGETS.includes(widget.widget_type as WidgetType)) : orderPanels(widgets);
   const [editing, setEditing] = useState<Widget | "new" | null>(null);
   useEffect(() => { if (!editMode) setEditing(null); }, [editMode]);
 
@@ -214,7 +196,7 @@ function ProductDashboard({ projectId, slug, product, editMode }: { projectId: s
             <Panel
               key={w.id ?? `d${i}`}
               title={w.widget_type === "evolution" && w.title === "Evolução do produto versus automação" ? WIDGET_CATALOG.evolution.defaultTitle : ["flaky_table", "failure_details", "failure_history"].includes(w.widget_type) ? w.title.replace(/\s*[—-]\s*últimos 30 dias/iu, "").replace(/\s*[—-]\s*ciclo de vida/iu, "") : w.title}
-              info={<><MetricExplanation type={w.widget_type} /><div className="space-y-1"><p className="font-semibold">Fontes de dados</p>{(w.widget_type === "flaky_table" ? d.specialByProduct.flaky.used : w.widget_type === "failure_details" ? d.specialByProduct.failures.used : w.widget_type === "cause_donut" ? d.specialByProduct.reasons.used : w.widget_type === "failure_history" ? d.specialByProduct.lifecycle.used : []).map((u, index) => <p key={index}>{u.product.toUpperCase()}: {u.file}{u.fallback ? ` (alternativa${u.reason ? `: ${u.reason}` : ""})` : ""}</p>)}{!["flaky_table", "failure_details", "cause_donut", "failure_history"].includes(w.widget_type) && d.projects.map(p => <p key={p.project.id}>{p.project.name}: {product.toUpperCase()} — {w.widget_type === "evolution" || w.widget_type === "coverage_waterfall" ? "evolução" : "execuções"} ({(w.widget_type === "evolution" || w.widget_type === "coverage_waterfall" ? p.sources[product].evolution : p.sources[product].executions).mode})</p>)}</div></>}
+              info={<><MetricExplanation type={w.widget_type} /><div className="space-y-1"><p className="font-semibold">Fontes de dados</p>{(w.widget_type === "flaky_table" ? d.specialByProduct.flaky.used : w.widget_type === "failure_details" ? d.nature.used : w.widget_type === "cause_donut" ? d.specialByProduct.reasons.used : w.widget_type === "failure_history" ? d.specialByProduct.lifecycle.used : w.widget_type === "failure_nature" ? d.nature.used : []).map((u, index) => <p key={index}>{u.product.toUpperCase()}: {u.file}{u.fallback ? ` (alternativa${u.reason ? `: ${u.reason}` : ""})` : ""}</p>)}{!["flaky_table", "failure_details", "cause_donut", "failure_history", "failure_nature"].includes(w.widget_type) && d.projects.map(p => <p key={p.project.id}>{p.project.name}: {product.toUpperCase()} — {w.widget_type === "evolution" || w.widget_type === "coverage_waterfall" ? "evolução" : "execuções"} ({(w.widget_type === "evolution" || w.widget_type === "coverage_waterfall" ? p.sources[product].evolution : p.sources[product].executions).mode})</p>)}</div></>}
               className={cn(w.width === "full" && "lg:col-span-2")}
               pdfInfo={`${WIDGET_CATALOG[w.widget_type as WidgetType]?.description ?? ""} ${WIDGET_CATALOG[w.widget_type as WidgetType]?.info ?? ""}`.trim()}
               action={
@@ -242,7 +224,7 @@ function WidgetDialog({ initial, isOverview, onClose, onSave, saving }: { initia
   const [type, setType] = useState<WidgetType>((initial?.widget_type as WidgetType) ?? "success_gauge");
   const [title, setTitle] = useState(initial?.title ?? WIDGET_CATALOG.success_gauge.defaultTitle);
   const [width, setWidth] = useState<"half" | "full">(initial?.width ?? "half");
-  const types = (Object.keys(WIDGET_CATALOG) as WidgetType[]).filter((t) => isOverview || t !== "project_ranking");
+  const types = (Object.keys(WIDGET_CATALOG) as WidgetType[]).filter((t) => (isOverview || t !== "project_ranking") && !HIDDEN_WIDGETS.includes(t));
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">

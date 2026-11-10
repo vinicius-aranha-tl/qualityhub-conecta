@@ -1,4 +1,4 @@
-import type { EvolutionPoint, Execution, Product, TestResult, Trigger } from "@/lib/metrics";
+import type { CapturedCall, CapturedEvidence, CapturedHttpError, CapturedNetworkFailure, ContractCondition, ContractCoverage, EvolutionPoint, Execution, Product, TestResult, Trigger } from "@/lib/metrics";
 import { groupFailureOccurrences } from "@/lib/metrics";
 
 /** Files published by the automations under quality-hub/ on the metrics branch. */
@@ -162,10 +162,72 @@ export function normalizeEvolution(raw: unknown): EvolutionPoint[] {
 export const STABILITY_FILE = "test-stability-30d.json";
 export const REASONS_FILE = "failure-reasons-30d.json";
 export const LIFECYCLE_FILE = "failure-lifecycle.json";
+export const CONTRACT_COVERAGE_FILE = "api-swagger-coverage-current.json";
+
+const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+
+/**
+ * api-swagger-coverage-current.json → condições do contrato (método, rota, status) e se cada uma
+ * tem evidência. Exige a lista `obligations`: sem ela não há como medir por endpoint.
+ */
+export function normalizeContractCoverage(raw: unknown): ContractCoverage {
+  if (!isObj(raw) || !Array.isArray(raw["obligations"])) throw new FormatError('campo "obligations" ausente ou não é uma lista');
+  const source = isObj(raw["source"]) ? raw["source"] : {};
+  const conditions: ContractCondition[] = [];
+  for (const [i, item] of (raw["obligations"] as unknown[]).entries()) {
+    if (!isObj(item)) throw new FormatError(`obligations[${i}] não é um objeto`);
+    const method = String(item["method"] ?? "").toUpperCase();
+    const path = typeof item["path"] === "string" ? item["path"].trim() : "";
+    const status = String(item["status"] ?? "").trim();
+    // "default" = rota do gateway sem resposta documentada no backend: entra como fora da base (isTestableStatus).
+    if (!METHODS.has(method) || !path.startsWith("/") || !/^(\d{3}|default)$/.test(status)) throw new FormatError(`obligations[${i}]: método, rota ou status inválido`);
+    const first = Array.isArray(item["evidence"]) ? (item["evidence"] as unknown[]).find(isObj) : undefined;
+    conditions.push({
+      method, path, status, covered: item["covered"] === true,
+      ...(first && typeof first["scenario"] === "string" ? { scenario: first["scenario"].slice(0, 240) } : {}),
+      ...(first && typeof first["testFile"] === "string" ? { testFile: first["testFile"].slice(0, 240) } : {}),
+    });
+  }
+  return {
+    generatedAt: text(raw["generatedAt"]),
+    sourceRepository: text(source["repository"]),
+    sourceBranch: text(source["branch"]),
+    sourceCommit: text(source["commit"]),
+    conditions,
+  };
+}
 
 export interface StabilityRow { title: string; executions: number; failureExecutions: number; successRate: number | null; dataSource: string }
 export interface ReasonRow { cause: string; value: number }
-export interface DatedTestResult { date: string; runId: string; testKey: string; title: string; status: TestResult["status"]; cause?: string }
+export interface DatedTestResult { date: string; runId: string; testKey: string; title: string; status: TestResult["status"]; cause?: string; summary?: string; runUrl?: string; captured?: CapturedEvidence }
+
+const MAX_EVIDENCE_ITEMS = 10;
+const text = (v: unknown, max = 240) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+const list = (v: unknown) => (Array.isArray(v) ? v.filter(isObj).slice(0, MAX_EVIDENCE_ITEMS) : []);
+const httpStatus = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 100 && v <= 599 ? v : null);
+
+/** Lê o campo `failureEvidence` gravado pela automação, aceitando só os campos e tipos esperados. */
+export function readCapturedEvidence(raw: unknown): CapturedEvidence | undefined {
+  if (!isObj(raw)) return undefined;
+  const phase = raw["phase"] === "preparacao" || raw["phase"] === "acao" || raw["phase"] === "verificacao" ? raw["phase"] : null;
+  const layer = raw["layer"] === "api" || raw["layer"] === "ui" ? raw["layer"] : undefined;
+  const calls: CapturedCall[] = list(raw["calls"]).map((c) => ({
+    method: text(c["method"], 10).toUpperCase() || "GET", url: text(c["url"]), status: httpStatus(c["status"]),
+    ...(typeof c["ms"] === "number" ? { ms: Math.round(c["ms"]) } : {}),
+    ...(text(c["detail"]) ? { detail: text(c["detail"]) } : {}), ...(text(c["error"]) ? { error: text(c["error"]) } : {}),
+  }));
+  const httpErrors: CapturedHttpError[] = list(raw["httpErrors"]).flatMap((e) => {
+    const status = httpStatus(e["status"]);
+    return status == null ? [] : [{ method: text(e["method"], 10).toUpperCase() || "GET", url: text(e["url"]), status, ...(text(e["type"], 20) ? { type: text(e["type"], 20) } : {}) }];
+  });
+  const networkFailures: CapturedNetworkFailure[] = list(raw["networkFailures"]).map((n) => ({ method: text(n["method"], 10).toUpperCase() || "GET", url: text(n["url"]), error: text(n["error"]) }));
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && Boolean(s.trim())).slice(0, MAX_EVIDENCE_ITEMS).map((s) => s.trim().slice(0, 240)) : []);
+  return {
+    ...(layer ? { layer } : {}), phase, failedStep: text(raw["failedStep"]) || null, timedOut: raw["timedOut"] === true,
+    ...(text(raw["pageUrl"]) ? { pageUrl: text(raw["pageUrl"]) } : {}), ...(text(raw["pageTitle"]) ? { pageTitle: text(raw["pageTitle"]) } : {}),
+    calls, httpErrors, networkFailures, pageErrors: strings(raw["pageErrors"]), consoleErrors: strings(raw["consoleErrors"]),
+  };
+}
 export interface DatedFailure { date: string; runId: string; testKey: string; cause: string }
 export interface DatedFailureHistory { failures: DatedFailure[]; tests: DatedTestResult[]; retentionDays: number | null }
 
@@ -188,7 +250,10 @@ export function normalizeDatedFailures(raw: unknown): DatedFailureHistory {
     if (!date || runId == null || typeof key !== "string" || !key) throw new FormatError(`results[${i}]: falha sem data, execução ou identificador do teste`);
     const title = typeof item["title"] === "string" ? item["title"] : key;
     const cause = item["failureCategory"] ? String(item["failureCategory"]) : undefined;
-    tests.push({ date, runId: String(runId), testKey: key, title, status, ...(cause ? { cause } : {}) });
+    const summary = typeof item["failureSummary"] === "string" && item["failureSummary"].trim() ? item["failureSummary"].trim().slice(0, 240) : undefined;
+    const runUrl = typeof item["runUrl"] === "string" && /^https:\/\/github\.com\//.test(item["runUrl"]) ? item["runUrl"] : undefined;
+    const captured = status === "passed" ? undefined : readCapturedEvidence(item["failureEvidence"]);
+    tests.push({ date, runId: String(runId), testKey: key, title, status, ...(cause ? { cause } : {}), ...(summary ? { summary } : {}), ...(runUrl && status !== "passed" ? { runUrl } : {}), ...(captured ? { captured } : {}) });
     if (status === "failed") failures.push({ date, runId: String(runId), testKey: key, cause: cause || "Histórico sem classificação" });
   }
   const retention = Number(raw["retentionDays"]);

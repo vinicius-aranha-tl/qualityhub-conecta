@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderKanban, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { backend, projectInput, type ProjectRecord } from "@/lib/backend-client";
+import { backend, FRONTS_LABEL, frontProducts, projectInput, type ProjectFronts, type ProjectRecord } from "@/lib/backend-client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,30 @@ export const projectsQuery = {
 
 type Proj = ProjectRecord;
 
+const FRONTS: { value: ProjectFronts; help: string }[] = [
+  { value: "api-ui", help: "Tem back-end e telas: painéis de API e de UI." },
+  { value: "api", help: "Só back-end (ex.: Visitas): só o painel de API." },
+  { value: "ui", help: "Só front-end: só o painel de UI." },
+];
+
+/** Escolha das frentes testadas no projeto; define quais abas e fontes do GitHub ele tem. */
+function FrontsField({ value, onChange }: { value: ProjectFronts; onChange: (v: ProjectFronts) => void }) {
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="mb-2 text-sm font-medium">Frentes do projeto</legend>
+      <div role="radiogroup" className="grid gap-2 sm:grid-cols-3">
+        {FRONTS.map((f) => (
+          <button key={f.value} type="button" role="radio" aria-checked={value === f.value} onClick={() => onChange(f.value)}
+            className={`rounded-lg border p-3 text-left transition-colors ${value === f.value ? "border-primary bg-brand-subtle" : "border-border hover:bg-subtle"}`}>
+            <span className="block text-sm font-semibold">{FRONTS_LABEL[f.value]}</span>
+            <span className="mt-1 block text-xs text-muted-foreground">{f.help}</span>
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 const slugify = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 function ProjectsPage() {
@@ -41,7 +65,7 @@ function ProjectsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Proj | null>(null);
   const [deleting, setDeleting] = useState<Proj | null>(null);
-  const count = (p: NonNullable<typeof q.data>[number]) => Number(Boolean(p.api_repo_owner && p.api_repo_name)) + Number(Boolean(p.ui_repo_owner && p.ui_repo_name));
+  const count = (p: Proj) => frontProducts(p.fronts).filter((product) => (product === "api" ? p.api_repo_owner && p.api_repo_name : p.ui_repo_owner && p.ui_repo_name)).length;
   return (
     <>
       <div className="flex items-start justify-between gap-4">
@@ -68,7 +92,7 @@ function ProjectsPage() {
                 )}
               </div>
               {p.description && <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{p.description}</p>}
-              <div className={`mt-4 text-xs ${count(p) === 2 ? "text-success" : "text-warning"}`}>{count(p)} de 2 repositórios do GitHub configurados</div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs"><span className="rounded-full bg-subtle px-2 py-0.5 font-medium">{FRONTS_LABEL[p.fronts]}</span><span className={count(p) === frontProducts(p.fronts).length ? "text-success" : "text-warning"}>{count(p)} de {frontProducts(p.fronts).length} {frontProducts(p.fronts).length === 1 ? "repositório configurado" : "repositórios configurados"}</span></div>
             </Link>
           ))}
         </div>
@@ -85,11 +109,12 @@ function NewProjectDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [fronts, setFronts] = useState<ProjectFronts>("api-ui");
   const m = useMutation({
     mutationFn: async () => {
       const slug = slugify(name);
       if (!slug) throw new Error("Informe um nome válido.");
-      await backend.createProject({ name: name.trim(), slug, description: description.trim() });
+      await backend.createProject({ name: name.trim(), slug, description: description.trim(), fronts });
       return slug;
     },
     onSuccess: (slug) => {
@@ -106,7 +131,8 @@ function NewProjectDialog({ onClose }: { onClose: () => void }) {
         <div className="grid gap-4">
           <div className="grid gap-2"><Label htmlFor="pn">Nome</Label><Input id="pn" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder="For Business" /></div>
           <div className="grid gap-2"><Label htmlFor="pd">Descrição</Label><Textarea id="pd" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} /></div>
-          <p className="text-xs text-muted-foreground">Depois de criar, você conecta as fontes do GitHub de API e UI.</p>
+          <FrontsField value={fronts} onChange={setFronts} />
+          <p className="text-xs text-muted-foreground">Depois de criar, você conecta as fontes do GitHub {fronts === "api-ui" ? "de API e UI" : fronts === "api" ? "da API" : "da UI"}.</p>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
@@ -121,11 +147,12 @@ function EditProjectDialog({ project, onClose }: { project: Proj; onClose: () =>
   const qc = useQueryClient();
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description);
+  const [fronts, setFronts] = useState<ProjectFronts>(project.fronts);
   const m = useMutation({
     mutationFn: async () => {
       const slug = slugify(name);
       if (!slug) throw new Error("Informe um nome válido.");
-      await backend.updateProject(project.id, { ...projectInput(project), name: name.trim(), slug, description: description.trim() });
+      await backend.updateProject(project.id, { ...projectInput(project), name: name.trim(), slug, description: description.trim(), fronts });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -142,6 +169,8 @@ function EditProjectDialog({ project, onClose }: { project: Proj; onClose: () =>
         <div className="grid gap-4">
           <div className="grid gap-2"><Label htmlFor="en">Nome</Label><Input id="en" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} /></div>
           <div className="grid gap-2"><Label htmlFor="ed">Descrição</Label><Textarea id="ed" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} /></div>
+          <FrontsField value={fronts} onChange={setFronts} />
+          {fronts !== project.fronts && fronts !== "api-ui" && <p className="text-xs text-warning">Ao salvar, a fonte do GitHub {fronts === "api" ? "da UI" : "da API"} deste projeto é removida e deixa de ser sincronizada.</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>

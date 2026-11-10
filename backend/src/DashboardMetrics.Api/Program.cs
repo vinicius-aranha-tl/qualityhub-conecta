@@ -310,23 +310,31 @@ record WidgetInput(string? ProjectId, string Product, string WidgetType, string 
 
 record ProjectInput(string Name, string Slug, string? Description,
     string? ApiRepoOwner, string? ApiRepoName, string? ApiBranch,
-    string? UiRepoOwner, string? UiRepoName, string? UiBranch)
+    string? UiRepoOwner, string? UiRepoName, string? UiBranch, string? Fronts = null)
 {
     public bool Valid() => !string.IsNullOrWhiteSpace(Name) && Name.Length <= 80 &&
         !string.IsNullOrWhiteSpace(Slug) && Slug.Length <= 100 &&
         System.Text.RegularExpressions.Regex.IsMatch(Slug, "^[a-z0-9]+(?:-[a-z0-9]+)*$") &&
         (Description?.Length ?? 0) <= 300 &&
+        (Fronts is null || ProjectFronts.IsValid(Fronts)) &&
         ValidRepo(ApiRepoOwner) && ValidRepo(ApiRepoName) && ValidRepo(UiRepoOwner) && ValidRepo(UiRepoName) &&
         ValidBranch(ApiBranch) && ValidBranch(UiBranch);
     private static bool ValidRepo(string? value) => string.IsNullOrEmpty(value) ||
         (value.Length <= 100 && System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z0-9_.-]+$"));
     private static bool ValidBranch(string? value) => string.IsNullOrEmpty(value) ||
         (value.Length <= 100 && System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z0-9_./-]+$"));
+    /// <summary>Grava frentes e fontes. Sem `Fronts` no pedido, mantém as frentes atuais. A frente desligada perde o repositório e deixa de ser sincronizada.</summary>
     public void ApplySources(Project project)
     {
-        project.ApiRepoOwner = ApiRepoOwner; project.ApiRepoName = ApiRepoName;
+        if (Fronts is not null) project.Fronts = Fronts;
+        if (!ProjectFronts.IsValid(project.Fronts)) project.Fronts = ProjectFronts.ApiUi;
+        var api = ProjectFronts.HasApi(project.Fronts);
+        var ui = ProjectFronts.HasUi(project.Fronts);
+        project.ApiRepoOwner = api ? ApiRepoOwner : null; project.ApiRepoName = api ? ApiRepoName : null;
         project.ApiBranch = string.IsNullOrWhiteSpace(ApiBranch) ? "automation-metrics" : ApiBranch;
-        project.UiRepoOwner = UiRepoOwner; project.UiRepoName = UiRepoName;
+        project.UiRepoOwner = ui ? UiRepoOwner : null; project.UiRepoName = ui ? UiRepoName : null;
         project.UiBranch = string.IsNullOrWhiteSpace(UiBranch) ? "automation-metrics" : UiBranch;
+        if (!api) { project.ApiExecutionsUrl = null; project.ApiEvolutionUrl = null; }
+        if (!ui) { project.UiExecutionsUrl = null; project.UiEvolutionUrl = null; }
     }
 }

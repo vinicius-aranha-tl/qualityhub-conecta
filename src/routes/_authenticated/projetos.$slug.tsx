@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, CheckCircle2, PlugZap, Save, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { backend, projectInput, type ProjectRecord } from "@/lib/backend-client";
+import { backend, FRONTS_LABEL, frontProducts, projectInput, type ProjectRecord } from "@/lib/backend-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,7 +52,7 @@ function ProjectPage() {
         </div>
         {tab === "fontes" && isAdmin && <Button variant="outline" size="sm" onClick={() => navigate({ search: {} })}><ArrowLeft className="h-4 w-4" /> Voltar ao painel</Button>}
       </div>
-      {tab === "fontes" && isAdmin ? <SourcesForm project={p} /> : <Dashboard projectId={p.id} slug={p.slug} name={p.name} onSources={isAdmin ? () => navigate({ search: { tab: "fontes" } }) : undefined} />}
+      {tab === "fontes" && isAdmin ? <SourcesForm project={p} /> : <Dashboard projectId={p.id} slug={p.slug} name={p.name} products={frontProducts(p.fronts)} onSources={isAdmin ? () => navigate({ search: { tab: "fontes" } }) : undefined} />}
     </>
   );
 }
@@ -80,7 +80,7 @@ function SourcesForm({ project }: { project: Project }) {
 
   const save = useMutation({
     mutationFn: async () => {
-      for (const pr of ["api", "ui"] as const) {
+      for (const pr of frontProducts(project.fronts)) {
         const r = repos[pr];
         if ((r.owner || r.name) && !(valid.test(r.owner.trim()) && valid.test(r.name.trim()))) throw new Error(`${pr.toUpperCase()}: informe organização e repositório válidos (sem espaços ou barras).`);
       }
@@ -133,6 +133,7 @@ function SourcesForm({ project }: { project: Project }) {
           <div className="grid gap-2"><Label htmlFor="n">Nome</Label><Input id="n" disabled={!isAdmin} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} /></div>
           <div className="grid gap-2"><Label htmlFor="d">Descrição</Label><Input id="d" disabled={!isAdmin} value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} /></div>
         </div>
+        <p className="mt-3 text-sm">Frentes: <strong>{FRONTS_LABEL[project.fronts]}</strong> <span className="text-xs text-muted-foreground">— para mudar, use Editar na lista de projetos.</span></p>
         {(project.last_synced_at || project.last_sync_error) && (
           <p className="mt-3 text-xs text-muted-foreground">
             {project.last_synced_at && <>Última leitura do GitHub: {new Date(project.last_synced_at).toLocaleString("pt-BR")}. </>}
@@ -140,7 +141,7 @@ function SourcesForm({ project }: { project: Project }) {
           </p>
         )}
       </Panel>
-      {(["api", "ui"] as const).map((pr) => {
+      {frontProducts(project.fronts).map((pr) => {
         const res = results[pr];
         return (
           <Panel key={pr} title={`Repositório de automação — ${pr.toUpperCase()}`} info="A plataforma lê os arquivos da pasta quality-hub/ na branch de métricas, pelo servidor, com um token de leitura. Se uma fonte não estiver configurada ou um arquivo não existir, o painel informa a indisponibilidade e não exibe dados de demonstração.">
