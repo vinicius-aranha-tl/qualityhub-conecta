@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireBackendAuth } from "@/lib/backend-auth";
 import { mapProject } from "@/lib/backend-client";
-import type { ContractCoverage, EvolutionPoint, Execution, Product } from "@/lib/metrics";
-import { CONTRACT_COVERAGE_FILE, countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeContractCoverage, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeLifecycle, normalizeReasons, normalizeStability, REASONS_FILE, QUALITY_HUB_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
+import type { BoardColumn, BugItem, ContractCoverage, EvolutionPoint, Execution, Product } from "@/lib/metrics";
+import { CONTRACT_COVERAGE_FILE, countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeContractCoverage, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeAzureWorkItems, normalizeLifecycle, normalizeReasons, normalizeStability, REASONS_FILE, QUALITY_HUB_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 
 export type SourceKind = "executions" | "evolution";
 export interface SourceStatus {
@@ -234,4 +234,135 @@ export const testRepo = createServerFn({ method: "POST" })
       }
     }));
     return { files, tokenConfigured, error: null as string | null };
+  });
+
+// ---------- Azure DevOps (bugs) ----------
+//
+// Uma configuração para todos os projetos (organização, projeto, área raiz e time do quadro), salva no
+// backend. O PAT (AZURE_DEVOPS_PAT, leitura de Work Items) fica só no servidor. Administradores leem o
+// Azure e salvam a captura no MongoDB; os demais usuários leem só a captura salva.
+
+export interface AzureSettings { organization: string; project: string; rootArea: string; team: string }
+export interface BugDataset {
+  settingsKey: string;
+  items: BugItem[];
+  columns: BoardColumn[];
+  boardName: string | null;
+  fetchedAt: string;
+  refreshError?: string;
+}
+export interface BugsResult { settings: AzureSettings | null; dataset: BugDataset | null; tokenConfigured: boolean; message?: string }
+
+/** Escapa um valor para dentro de aspas simples na WIQL. */
+export function wiqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Consultas iguais às do "Dash QA": bugs e defeitos (Tasks com a tag DEFEITO) na área; PBIs para a proporção e o quadro. */
+export function bugQueries(project: string, rootArea: string): Record<"bug" | "defeito" | "pbi", string> {
+  const base = `[System.TeamProject] = ${wiqlString(project)} AND [System.AreaPath] UNDER ${wiqlString(rootArea)}`;
+  const select = "SELECT [System.Id] FROM WorkItems WHERE";
+  return {
+    bug: `${select} ${base} AND [System.WorkItemType] = 'Bug' ORDER BY [System.Id]`,
+    defeito: `${select} ${base} AND [System.WorkItemType] = 'Task' AND [System.Tags] CONTAINS 'DEFEITO' ORDER BY [System.Id]`,
+    pbi: `${select} ${base} AND [System.WorkItemType] IN GROUP 'Microsoft.RequirementCategory' ORDER BY [System.Id]`,
+  };
+}
+
+/** Escolhe o quadro de requisitos (Backlog items / Stories / Requirements); sem nenhum deles, o último da lista. */
+export function pickBoard(boards: { name: string; url: string }[]): { name: string; url: string } | null {
+  const preferred = ["backlog items", "stories", "requirements", "issues"];
+  return boards.find((b) => preferred.includes(b.name.toLowerCase())) ?? boards[boards.length - 1] ?? null;
+}
+
+const settingsKey = (s: AzureSettings) => JSON.stringify(["azure-v1", s.organization, s.project, s.rootArea, s.team]);
+
+async function readAzure(settings: AzureSettings): Promise<Omit<BugDataset, "settingsKey" | "fetchedAt">> {
+  const pat = process.env["AZURE_DEVOPS_PAT"];
+  if (!pat) throw new Error("O token do Azure DevOps (AZURE_DEVOPS_PAT) não está configurado no servidor.");
+  const org = encodeURIComponent(settings.organization);
+  const project = encodeURIComponent(settings.project);
+  const team = encodeURIComponent(settings.team);
+  const root = `https://dev.azure.com/${org}`;
+  const headers = { Authorization: `Basic ${Buffer.from(`:${pat}`).toString("base64")}`, "Content-Type": "application/json", Accept: "application/json" };
+  const call = async <T>(url: string, body?: unknown): Promise<T> => {
+    if (new URL(url).host !== "dev.azure.com") throw new Error("Endereço do Azure DevOps não permitido.");
+    const res = await fetch(url, { method: body === undefined ? "GET" : "POST", headers, body: body === undefined ? null : JSON.stringify(body), redirect: "manual" });
+    if (res.status === 401 || res.status === 203 || (res.status >= 300 && res.status < 400)) throw new Error("O Azure DevOps recusou o token (AZURE_DEVOPS_PAT). Verifique se ele vale para a organização e tem leitura de Work Items.");
+    if (res.status === 404) throw new Error("Organização, projeto ou time não encontrado no Azure DevOps. Confira a configuração.");
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null) as { message?: string } | null;
+      throw new Error(`Azure DevOps respondeu ${res.status}${detail?.message ? `: ${detail.message.slice(0, 200)}` : ""}.`);
+    }
+    return res.json() as Promise<T>;
+  };
+
+  // Quadro do time: colunas (com WIP) e o campo que guarda a coluna de cada item.
+  const boards = await call<{ value: { name: string; url: string }[] }>(`${root}/${project}/${team}/_apis/work/boards?api-version=7.1`);
+  const chosen = pickBoard(boards.value ?? []);
+  let columns: BoardColumn[] = [];
+  let columnField = "System.BoardColumn";
+  if (chosen) {
+    const board = await call<{ columns?: { name: string; itemLimit?: number; columnType?: string }[]; fields?: { columnField?: { referenceName?: string } } }>(`${root}/${project}/${team}/_apis/work/boards/${encodeURIComponent(chosen.name)}?api-version=7.1`);
+    columns = (board.columns ?? []).map((c) => ({ name: c.name, wip: c.columnType === "inProgress" && c.itemLimit ? c.itemLimit : null, done: c.columnType === "outgoing" }));
+    columnField = board.fields?.columnField?.referenceName ?? columnField;
+  }
+
+  const queries = bugQueries(settings.project, settings.rootArea);
+  const ids = await Promise.all((["bug", "defeito", "pbi"] as const).map(async (kind) => {
+    const r = await call<{ workItems?: { id: number }[] }>(`${root}/${project}/_apis/wit/wiql?api-version=7.1`, { query: queries[kind] });
+    return (r.workItems ?? []).map((w) => w.id);
+  }));
+  const all = [...new Set(ids.flat())];
+  const fields = ["System.Id", "System.WorkItemType", "System.Title", "System.State", "System.CreatedDate", "Microsoft.VSTS.Common.ClosedDate", "Microsoft.VSTS.Common.StateChangeDate", "Microsoft.VSTS.Common.Priority", "Microsoft.VSTS.Common.Severity", "System.AssignedTo", "System.IterationPath", "System.AreaPath", columnField];
+  const chunks: number[][] = [];
+  for (let i = 0; i < all.length; i += 200) chunks.push(all.slice(i, i + 200));
+  const batches = await mapLimit(chunks, 3, (chunk) => call<{ value: unknown[] }>(`${root}/${project}/_apis/wit/workitemsbatch?api-version=7.1`, { ids: chunk, fields: [...new Set(fields)], errorPolicy: "omit" }));
+  const raw = { value: batches.flatMap((b) => (b.value ?? []).filter(Boolean)) };
+
+  // Categoria de cada estado, por tipo de item.
+  const types = [...new Set(raw.value.map((v) => ((v as { fields?: Record<string, unknown> }).fields?.["System.WorkItemType"])).filter((t): t is string => typeof t === "string"))];
+  const categories: Record<string, Record<string, string>> = {};
+  await Promise.all(types.map(async (type) => {
+    const states = await call<{ value: { name: string; category: string }[] }>(`${root}/${project}/_apis/wit/workitemtypes/${encodeURIComponent(type)}/states?api-version=7.1`);
+    categories[type] = Object.fromEntries((states.value ?? []).map((s) => [s.name, s.category]));
+  }));
+
+  const items = normalizeAzureWorkItems(raw, { categories, webBase: `${root}/${project}`, rootArea: settings.rootArea, columnField });
+  return { items, columns, boardName: chosen?.name ?? null };
+}
+
+/** Bugs do Azure DevOps para a aba Bugs e a visão geral. `force` relê o Azure (só administradores). */
+export const loadBugs = createServerFn({ method: "POST" })
+  .middleware([requireBackendAuth])
+  .validator((d: unknown) => z.object({ force: z.boolean().optional() }).parse(d))
+  .handler(async ({ data, context }): Promise<BugsResult> => {
+    const backendUrl = process.env["BACKEND_URL"] ?? "http://127.0.0.1:5080";
+    const get = (path: string) => fetch(`${backendUrl}/api/v1${path}`, { headers: { cookie: context.backendCookie } });
+    const tokenConfigured = Boolean(process.env["AZURE_DEVOPS_PAT"]);
+    const settingsRes = await get("/settings/azure");
+    if (settingsRes.status === 404) return { settings: null, dataset: null, tokenConfigured };
+    if (!settingsRes.ok) throw new Error("Não foi possível ler a configuração do Azure DevOps.");
+    const settings = await settingsRes.json() as AzureSettings;
+    const snapRes = await get("/bug-snapshot");
+    if (!snapRes.ok && snapRes.status !== 404) throw new Error("Não foi possível consultar os bugs salvos no MongoDB.");
+    const saved = snapRes.ok ? await snapRes.json() as BugDataset : null;
+    const cached = saved?.settingsKey === settingsKey(settings) ? saved : null;
+    if (context.backendRole !== "admin") {
+      return cached ? { settings, dataset: cached, tokenConfigured } : { settings, dataset: null, tokenConfigured, message: "Os bugs ainda não foram sincronizados com o Azure DevOps. Peça a um administrador para atualizar os dados." };
+    }
+    if (!data.force && cached && Date.now() - Date.parse(cached.fetchedAt) < TTL) return { settings, dataset: cached, tokenConfigured };
+    // Sem token, a tela já avisa (tokenConfigured); mostra a última leitura salva, se houver.
+    if (!tokenConfigured) return { settings, dataset: cached, tokenConfigured };
+    let read: Awaited<ReturnType<typeof readAzure>>;
+    try {
+      read = await readAzure(settings);
+    } catch (e) {
+      const message = (e as Error).message;
+      return cached ? { settings, dataset: { ...cached, refreshError: `${message} Exibindo a última leitura salva.` }, tokenConfigured } : { settings, dataset: null, tokenConfigured, message };
+    }
+    const dataset: BugDataset = { settingsKey: settingsKey(settings), ...read, fetchedAt: new Date().toISOString() };
+    const put = await fetch(`${backendUrl}/api/v1/bug-snapshot`, { method: "PUT", headers: { cookie: context.backendCookie, "Content-Type": "application/json" }, body: JSON.stringify(dataset) });
+    if (!put.ok) return { settings, dataset: { ...dataset, refreshError: "Não foi possível salvar a leitura do Azure DevOps no MongoDB." }, tokenConfigured };
+    return { settings, dataset, tokenConfigured };
   });

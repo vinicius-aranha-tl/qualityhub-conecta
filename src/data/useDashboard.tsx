@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { aggregateEvolution, classifyFailures, daysAgoISO, dedupeExecutions, detectIncidents, failureRows, filterExecutions, flakyTable, causeDistribution, groupFailureOccurrences, type ClassifiedFailure, type ContractCoverage, type FailureIncident, type Product, type TestOccurrence, type Trigger } from "@/lib/metrics";
 import { scenarioTitle, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 import type { ProjectData } from "@/lib/sources.functions";
-import { loadDashboardData } from "@/lib/sources.functions";
+import { loadBugs, loadDashboardData } from "@/lib/sources.functions";
 
 export type PeriodKey = "7" | "15" | "30" | "90" | "all";
 export const PERIOD_LABEL: Record<PeriodKey, string> = { "7": "Últimos 7 dias", "15": "Últimos 15 dias", "30": "Últimos 30 dias", "90": "Últimos 90 dias", all: "Todo o histórico" };
@@ -60,6 +60,12 @@ export function useDashboardData(slug: string | null, product: Product) {
     };
   }, [q.data, filters, product]);
   return { ...q, d, periodLabel: PERIOD_LABEL[filters.period] };
+}
+
+/** Bugs do Azure DevOps (configuração única, todas as squads). Mesmo ciclo de 5 min e o mesmo botão "Atualizar dados". */
+export function useBugs() {
+  const load = useServerFn(loadBugs);
+  return useQuery({ queryKey: ["dataset", "bugs"], queryFn: () => load({ data: { force: Date.now() < forceUntil } }), staleTime: 5 * 60_000, refetchInterval: 5 * 60_000 });
 }
 
 export type DashData = NonNullable<ReturnType<typeof useDashboardData>["d"]>;

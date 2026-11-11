@@ -28,6 +28,11 @@ Testes: `bunx vitest run`.
 
 Sem repositório configurado, o painel informa que a fonte está indisponível.
 
+## Configurar o Azure DevOps (bugs)
+1. No Azure DevOps, crie um Personal Access Token com escopo **Work Items: Read** na organização e salve como `AZURE_DEVOPS_PAT` nos segredos do projeto (localmente, em `.env.local`). Reinicie o servidor.
+2. Em Bugs → "Configurar Azure DevOps" (administrador), informe organização, projeto, área raiz (cada subárea é uma squad) e o time do quadro. É uma configuração só para todos os projetos.
+3. Clique em "Atualizar dados": o servidor lê o Azure e salva a leitura no MongoDB. Os demais usuários veem essa leitura.
+
 ## Adicionar uma nova fonte de métricas
 1. Adicione o arquivo em `QUALITY_HUB_FILES` (`src/lib/normalize.ts`).
 2. Crie um normalizador puro com teste em `normalize.test.ts`.

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  agingOpen,
+  currentTests,
+  clearProjection,
+  bugWeeklyFlow,
+  bugRatio,
+  bugsByColumn,
   computeProjection,
+  squadComparison,
+  squadOf,
   countCoveredConditions,
   dailyExecutionVolume,
   dedupeExecutions,
@@ -19,6 +27,10 @@ import {
   groupClassified,
   natureDistribution,
   testLocation,
+  bugBurnup,
+  bugDistribution,
+  bugSummary,
+  type BugItem,
   classifyByEvidence,
   contractSummary,
   endpointCoverage,
@@ -319,4 +331,109 @@ it("rota do gateway sem backend (status default) fica fora da base", () => {
   ] } }]);
   expect(endpoint).toMatchObject({ testable: 0, percent: null, excludedStatuses: ["default"] });
   expect(isTestableStatus("default")).toBe(false);
+});
+
+describe("bugs do Azure DevOps", () => {
+  const bug = (id: number, created: string, category = "Proposed", closed: string | null = null, extra: Partial<BugItem> = {}): BugItem => ({
+    id, kind: "bug", title: `Bug ${id}`, state: category === "Completed" ? "Done" : "New", category, severity: "3 - Medium", priority: "2", assignedTo: "", createdDate: `${created}T10:00:00Z`, closedDate: closed ? `${closed}T10:00:00Z` : null, stateChangeDate: null, iteration: "", areaPath: "", squad: "Titans", column: "", url: "", ...extra,
+  });
+  const items = [
+    bug(1, "2026-09-01", "Completed", "2026-09-10"),
+    bug(2, "2026-09-03", "Completed", "2026-09-20"),
+    bug(3, "2026-09-15"),
+    bug(4, "2026-09-18", "InProgress", null, { severity: "1 - Critical" }),
+    bug(5, "2026-09-19", "Removed"),
+  ];
+
+  it("resume abertos e concluídos sem contar removidos e projeta a conclusão pelo ritmo do período", () => {
+    // Criou 4 e concluiu 2 no período: os abertos não estão caindo, então não há previsão.
+    expect(bugSummary(items, "2026-09-01", "2026-09-30")).toEqual({ total: 4, open: 2, done: 2, donePercent: 50, createdInPeriod: 4, doneInPeriod: 2, projection: null });
+    // Nenhum criado e 2 concluídos em 30 dias: 1 aberto restante cai em 15 dias.
+    const draining = [bug(10, "2026-08-01", "Completed", "2026-09-10"), bug(11, "2026-08-02", "Completed", "2026-09-12"), bug(12, "2026-08-03")];
+    expect(bugSummary(draining, "2026-09-01", "2026-09-30").projection).toBe("2026-10-15");
+    expect(bugSummary(items, "2026-09-16", "2026-09-30")).toMatchObject({ createdInPeriod: 1, doneInPeriod: 1 });
+    expect(bugSummary([], null, "2026-09-30")).toMatchObject({ total: 0, donePercent: null, projection: null });
+  });
+
+  it("monta o burnup semanal fechando na sexta", () => {
+    expect(bugBurnup(items, "2026-09-01", "2026-09-22")).toEqual([
+      { week: "2026-09-04", scope: 2, done: 0, open: 2 },
+      { week: "2026-09-11", scope: 2, done: 1, open: 1 },
+      { week: "2026-09-18", scope: 4, done: 1, open: 3 },
+      { week: "2026-09-22", scope: 4, done: 2, open: 2 },
+    ]);
+  });
+
+  it("conta criados e concluídos em cada semana e os abertos no fim dela", () => {
+    expect(bugWeeklyFlow(items, "2026-09-01", "2026-09-22")).toEqual([
+      { week: "2026-09-04", created: 2, done: 0, open: 2 },
+      { week: "2026-09-11", created: 0, done: 1, open: 1 },
+      { week: "2026-09-18", created: 2, done: 0, open: 3 },
+      { week: "2026-09-22", created: 0, done: 1, open: 2 },
+    ]);
+  });
+
+  it("projeta as semanas para zerar os abertos pelo ritmo de conclusão, sem novos itens", () => {
+    // 8 concluídos nas últimas 8 semanas = 1 por semana; 3 abertos zeram em 3 semanas.
+    const done = Array.from({ length: 8 }, (_, i) => bug(100 + i, "2026-08-01", "Completed", `2026-09-${String(10 + i * 2).padStart(2, "0")}`));
+    const open = [bug(200, "2026-09-01"), bug(201, "2026-09-02"), bug(202, "2026-09-03")];
+    const p = clearProjection([...done, ...open], "2026-09-30");
+    expect(p).toMatchObject({ open: 3, perWeek: 1, weeks: 3, date: "2026-10-21" });
+    expect(p.points.slice(-4).map((x) => [x.week, x.actual, x.projected])).toEqual([["2026-09-30", 3, 3], ["2026-10-07", null, 2], ["2026-10-14", null, 1], ["2026-10-21", null, 0]]);
+    expect(clearProjection(open, "2026-09-30")).toMatchObject({ perWeek: 0, weeks: null, date: null });
+    expect(clearProjection(done, "2026-09-30")).toMatchObject({ open: 0, weeks: 0 });
+  });
+
+  it("distribui por campo, do maior para o menor, sem removidos", () => {
+    expect(bugDistribution(items, "severity")).toEqual([{ label: "3 - Medium", value: 3 }, { label: "1 - Critical", value: 1 }]);
+    expect(bugDistribution(items, "squad")).toEqual([{ label: "Titans", value: 4 }]);
+  });
+
+  it("identifica a squad pela primeira subárea abaixo da raiz", () => {
+    const root = String.raw`ConectaMarketplace\Development`;
+    expect(squadOf(String.raw`ConectaMarketplace\Development\Team Titans`, root)).toBe("Titans");
+    expect(squadOf(String.raw`ConectaMarketplace\Development\Team Vanguard\Mobile`, root + "\\")).toBe("Vanguard");
+    expect(squadOf(String.raw`ConectaMarketplace\Development`, root)).toBe("Sem squad");
+    expect(squadOf(String.raw`ConectaMarketplace\Discovery`, root)).toBe("Sem squad");
+  });
+
+  it("conta os abertos por coluna do quadro e marca o WIP estourado com os PBIs da coluna", () => {
+    const columns = [{ name: "A", wip: null, done: false }, { name: "D", wip: 2, done: false }, { name: "Done", wip: null, done: true }];
+    const bugs = [bug(1, "2026-09-01", "Proposed", null, { column: "A" }), bug(2, "2026-09-01", "InProgress", null, { column: "D" }), bug(3, "2026-09-01", "Completed", "2026-09-02", { column: "Done" })];
+    const pbis = [bug(4, "2026-09-01", "InProgress", null, { kind: "pbi", column: "D" }), bug(5, "2026-09-01", "InProgress", null, { kind: "pbi", column: "D" })];
+    expect(bugsByColumn(columns, bugs, pbis)).toEqual([
+      { column: "A", bugs: 1, others: 0, total: 1, wip: null, overWip: false },
+      { column: "D", bugs: 1, others: 2, total: 3, wip: 2, overWip: true },
+    ]);
+  });
+
+  it("ordena os abertos pelo tempo parado no estado atual", () => {
+    const list = [bug(1, "2026-09-01", "Proposed", null, { stateChangeDate: "2026-09-25T08:00:00Z" }), bug(2, "2026-09-10"), bug(3, "2026-09-01", "Completed", "2026-09-05")];
+    expect(agingOpen(list, "2026-09-30").map((b) => [b.id, b.ageDays])).toEqual([[2, 20], [1, 5]]);
+  });
+
+  it("compara as squads e calcula a proporção de bugs sobre bugs + PBIs criados no período", () => {
+    const list = [
+      bug(1, "2026-09-02"), bug(2, "2026-09-03", "Completed", "2026-09-04"),
+      bug(3, "2026-09-05", "Proposed", null, { squad: "Vanguard" }),
+      bug(10, "2026-09-02", "Proposed", null, { kind: "pbi" }), bug(11, "2026-09-02", "Proposed", null, { kind: "pbi" }), bug(12, "2026-08-02", "Proposed", null, { kind: "pbi" }),
+    ];
+    const rows = squadComparison(list, "2026-09-01", "2026-09-30");
+    expect(rows.map((r) => [r.squad, r.open, r.total, r.bugRatio, r.avgOpenAgeDays])).toEqual([["Titans", 1, 2, 50, 28], ["Vanguard", 1, 1, 100, 25]]);
+    expect(bugRatio([], [], null, "2026-09-30")).toBeNull();
+  });
+});
+
+describe("testes atuais", () => {
+  const run = (dataSource: string, date: string, titles: string[], id = date): Execution => ({ id: dataSource + id, product: "api", triggerId: id, runAttempt: 1, trigger: "scheduled", date, dataSource, results: titles.map((title) => ({ title, status: "passed" })) });
+  it("conta os cenários da última execução de cada projeto e soma os projetos, sem os nomes antigos", () => {
+    const execs = [
+      run("Recomenda · API", "2026-11-10", ["a - HTTP 201", "b - HTTP 400"]),
+      run("Recomenda · API", "2026-11-11", ["a - SUCESSO", "b - ERRO 400"]),
+      run("Recomenda · API", "2026-11-11", ["c - SUCESSO"], "shard-2"),
+      run("Visitas · API", "2026-11-09", ["v1", "v2", "v3"]),
+    ];
+    expect(currentTests(execs, "api")).toEqual({ total: 6, projects: [{ dataSource: "Recomenda · API", date: "2026-11-11", count: 3 }, { dataSource: "Visitas · API", date: "2026-11-09", count: 3 }] });
+    expect(currentTests(execs, "ui")).toEqual({ total: 0, projects: [] });
+  });
 });

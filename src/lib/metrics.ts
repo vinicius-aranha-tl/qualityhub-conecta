@@ -135,10 +135,26 @@ export function rateTone(rate: number): Tone {
   return "danger";
 }
 
+export interface CurrentTests { total: number; projects: { dataSource: string; date: string; count: number }[] }
+
+/**
+ * Testes atuais: cada título de cenário é um teste. Conta os cenários da execução mais recente de cada
+ * projeto (todas as execuções desse último dia juntas, para não perder uma execução dividida) e soma os
+ * projetos. Testes renomeados ou removidos deixam de contar assim que a próxima execução roda.
+ */
+export function currentTests(execs: Execution[], product: Product): CurrentTests {
+  const latest = new Map<string, string>();
+  for (const e of execs) if (e.product === product && e.results.length && e.date > (latest.get(e.dataSource) ?? "")) latest.set(e.dataSource, e.date);
+  const projects = [...latest.entries()].map(([dataSource, date]) => {
+    const titles = new Set<string>();
+    for (const e of execs) if (e.product === product && e.dataSource === dataSource && e.date === date) e.results.forEach((r) => titles.add(r.title));
+    return { dataSource, date, count: titles.size };
+  }).sort((a, b) => a.dataSource.localeCompare(b.dataSource));
+  return { total: projects.reduce((sum, p) => sum + p.count, 0), projects };
+}
+
 export function testCount(execs: Execution[], product: Product): number {
-  const titles = new Set<string>();
-  for (const e of execs) if (e.product === product) e.results.forEach((r) => titles.add(r.title));
-  return titles.size;
+  return currentTests(execs, product).total;
 }
 
 export function dailyResults(execs: Execution[]): DailyResult[] {
@@ -898,4 +914,200 @@ export function contractSummary(endpoints: EndpointCoverage[]): ContractSummary 
     partiallyCovered: withBase.filter((e) => e.covered > 0 && e.covered < e.testable).length,
     notCovered: withBase.filter((e) => e.covered === 0).length,
   };
+}
+
+// ---------- Bugs do Azure DevOps ----------
+//
+// Uma consulta para todos os projetos: work items abaixo da área raiz (ex.: ConectaMarketplace\Development).
+// Bugs = tipo Bug; defeitos = Tasks com a tag DEFEITO; PBIs (categoria de requisitos) só entram na
+// proporção de bugs e na carga das colunas do quadro. A squad é a primeira subárea abaixo da raiz.
+// O estado é agrupado pela categoria do Azure (Proposed, InProgress, Resolved, Completed, Removed):
+// Completed conta como concluído e Removed sai das contas.
+
+export type BugKind = "bug" | "defeito" | "pbi";
+export const NO_SQUAD = "Sem squad";
+export interface BugItem {
+  id: number;
+  kind: BugKind;
+  title: string;
+  state: string;
+  /** Categoria do estado no Azure DevOps. */
+  category: string;
+  severity: string;
+  priority: string;
+  assignedTo: string;
+  createdDate: string;
+  closedDate: string | null;
+  /** Última mudança de estado (para o tempo parado). */
+  stateChangeDate: string | null;
+  iteration: string;
+  areaPath: string;
+  squad: string;
+  /** Coluna do quadro (vazia quando o item não aparece no quadro, como as Tasks). */
+  column: string;
+  url: string;
+}
+export interface BoardColumn { name: string; wip: number | null; done: boolean }
+
+export const isBugDone = (b: BugItem) => b.category === "Completed";
+export const isBugRemoved = (b: BugItem) => b.category === "Removed";
+const isOpen = (b: BugItem) => !isBugDone(b) && !isBugRemoved(b);
+/** Data em que o item foi concluído; sem data de fechamento, considera a criação. */
+const doneDate = (b: BugItem) => (isBugDone(b) ? (b.closedDate ?? b.createdDate).slice(0, 10) : null);
+const inRange = (date: string | null, from: string | null, to: string) => date != null && (!from || date >= from) && date <= to;
+
+/** Squad = primeira subárea abaixo da área raiz, sem o prefixo "Team". Itens na própria raiz ficam em "Sem squad". */
+export function squadOf(areaPath: string, rootArea: string): string {
+  const root = rootArea.replace(/\\+$/, "");
+  if (!areaPath.toLowerCase().startsWith(`${root.toLowerCase()}\\`)) return NO_SQUAD;
+  const first = areaPath.slice(root.length + 1).split("\\")[0]?.trim() ?? "";
+  return first.replace(/^team\s+/i, "") || NO_SQUAD;
+}
+
+export interface BugSummary { total: number; open: number; done: number; donePercent: number | null; createdInPeriod: number; doneInPeriod: number; projection: string | null }
+
+/**
+ * Totais: abertos e concluídos são a foto de hoje (sem itens removidos); criados/concluídos no período
+ * seguem o filtro de datas. A projeção de conclusão usa a queda líquida dos abertos no período
+ * (concluídos menos criados), como o Azure DevOps: se os abertos não estão caindo, não há previsão.
+ */
+export function bugSummary(items: BugItem[], from: string | null, to: string): BugSummary {
+  const live = items.filter((b) => !isBugRemoved(b));
+  const done = live.filter(isBugDone).length;
+  const createdInPeriod = live.filter((b) => inRange(b.createdDate.slice(0, 10), from, to)).length;
+  const doneInPeriod = live.filter((b) => inRange(doneDate(b), from, to)).length;
+  const open = live.length - done;
+  const start = from ?? live.map((b) => b.createdDate.slice(0, 10)).sort()[0] ?? to;
+  const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(start)) / 86400000) + 1);
+  const netPerDay = (doneInPeriod - createdInPeriod) / days;
+  const projection = open === 0 || netPerDay <= 0 ? null : new Date(Date.parse(to) + Math.ceil(open / netPerDay) * 86400000).toISOString().slice(0, 10);
+  return { total: live.length, open, done, donePercent: live.length ? Math.round((done / live.length) * 1000) / 10 : null, createdInPeriod, doneInPeriod, projection };
+}
+
+export interface BurnupPoint { week: string; scope: number; done: number; open: number }
+
+/** Burnup semanal (fim de semana na sexta, como no Azure): escopo acumulado, concluídos acumulados e abertos. */
+export function bugBurnup(items: BugItem[], from: string, to: string): BurnupPoint[] {
+  const live = items.filter((b) => !isBugRemoved(b));
+  const friday = (iso: string) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + ((5 - d.getUTCDay() + 7) % 7)); return d.toISOString().slice(0, 10); };
+  const points: BurnupPoint[] = [];
+  for (let week = friday(from); ; ) {
+    const cut = week > to ? to : week;
+    const scope = live.filter((b) => b.createdDate.slice(0, 10) <= cut).length;
+    const done = live.filter((b) => { const d = doneDate(b); return d != null && d <= cut; }).length;
+    points.push({ week: cut, scope, done, open: scope - done });
+    if (week >= to) break;
+    const next = new Date(`${week}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + 7); week = next.toISOString().slice(0, 10);
+  }
+  return points;
+}
+
+export interface WeeklyFlowPoint { week: string; created: number; done: number; open: number }
+
+/**
+ * Fluxo semanal (semana fechando na sexta): quantos itens entraram e quantos foram concluídos em cada
+ * semana, e quantos ficaram abertos no fim dela. Mais fácil de ler que o acumulado do burnup.
+ */
+export function bugWeeklyFlow(items: BugItem[], from: string, to: string): WeeklyFlowPoint[] {
+  const live = items.filter((b) => !isBugRemoved(b));
+  let previous = "";
+  return bugBurnup(items, from, to).map((p) => {
+    const start = previous;
+    previous = p.week;
+    const inWeek = (d: string | null) => d != null && d <= p.week && (start ? d > start : d >= from);
+    return { week: p.week, created: live.filter((b) => inWeek(b.createdDate.slice(0, 10))).length, done: live.filter((b) => inWeek(doneDate(b))).length, open: p.open };
+  });
+}
+
+export interface ClearProjection {
+  open: number;
+  /** Média de itens concluídos por semana nas últimas `lookbackWeeks` semanas. */
+  perWeek: number;
+  lookbackWeeks: number;
+  /** Semanas para zerar os abertos se não entrar nenhum item novo (null = sem ritmo de conclusão). */
+  weeks: number | null;
+  date: string | null;
+  /** Histórico dos abertos no fim de cada semana e a queda projetada a partir de hoje. */
+  points: { week: string; actual: number | null; projected: number | null }[];
+}
+
+const addDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+
+/**
+ * Projeção para zerar os abertos: no ritmo médio de conclusão das últimas semanas e sem novos itens,
+ * quantas semanas faltam. O gráfico projetado para em `maxWeeks` para não esticar demais o eixo.
+ */
+export function clearProjection(items: BugItem[], today: string, lookbackWeeks = 8, maxWeeks = 26): ClearProjection {
+  const live = items.filter((b) => !isBugRemoved(b));
+  const from = addDays(today, -(lookbackWeeks * 7 - 1));
+  const perWeek = Math.round((live.filter((b) => inRange(doneDate(b), from, today)).length / lookbackWeeks) * 10) / 10;
+  const history = bugBurnup(items, from, today);
+  const open = live.filter(isOpen).length;
+  const weeks = open === 0 ? 0 : perWeek > 0 ? Math.ceil(open / perWeek) : null;
+  const points: ClearProjection["points"] = history.map((p) => ({ week: p.week, actual: p.open, projected: null }));
+  const last = points[points.length - 1];
+  if (last) last.projected = last.actual;
+  if (weeks) for (let i = 1; i <= Math.min(weeks, maxWeeks); i++) points.push({ week: addDays(today, i * 7), actual: null, projected: Math.max(0, Math.round((open - perWeek * i) * 10) / 10) });
+  return { open, perWeek, lookbackWeeks, weeks, date: weeks == null ? null : addDays(today, weeks * 7), points };
+}
+
+/** Contagem por um campo (estado, severidade, prioridade, squad), da maior para a menor. */
+export function bugDistribution(items: BugItem[], field: "state" | "severity" | "priority" | "squad"): { label: string; value: number }[] {
+  const counts = new Map<string, number>();
+  for (const b of items) if (!isBugRemoved(b)) counts.set(b[field] || "Não informado", (counts.get(b[field] || "Não informado") ?? 0) + 1);
+  return [...counts.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+}
+
+/** Dias no estado atual (desde a última mudança de estado; sem ela, desde a criação). */
+export function bugAgeDays(b: BugItem, today: string): number {
+  const since = (b.stateChangeDate ?? b.createdDate).slice(0, 10);
+  return Math.max(0, Math.round((Date.parse(today) - Date.parse(since)) / 86400000));
+}
+
+/** Itens abertos com o tempo parado no estado atual, do mais antigo para o mais recente. */
+export function agingOpen(items: BugItem[], today: string): (BugItem & { ageDays: number })[] {
+  return items.filter(isOpen).map((b) => ({ ...b, ageDays: bugAgeDays(b, today) })).sort((a, b) => b.ageDays - a.ageDays || a.id - b.id);
+}
+
+export interface ColumnLoad { column: string; bugs: number; others: number; total: number; wip: number | null; overWip: boolean }
+
+/**
+ * Itens abertos por coluna do quadro, na ordem do quadro e sem a coluna de concluídos. `others` são os
+ * demais itens do quadro (PBIs), porque o limite de WIP do Azure vale para a coluna inteira.
+ */
+export function bugsByColumn(columns: BoardColumn[], bugs: BugItem[], others: BugItem[] = []): ColumnLoad[] {
+  const count = (list: BugItem[], name: string) => list.filter((b) => isOpen(b) && b.column === name).length;
+  return columns.filter((c) => !c.done).map((c) => {
+    const b = count(bugs, c.name);
+    const o = count(others, c.name);
+    return { column: c.name, bugs: b, others: o, total: b + o, wip: c.wip, overWip: c.wip != null && b + o > c.wip };
+  });
+}
+
+/** Proporção de bugs: bugs criados ÷ (bugs + PBIs criados) no período, em %. Null quando não houve itens. */
+export function bugRatio(bugs: BugItem[], pbis: BugItem[], from: string | null, to: string): number | null {
+  const created = (list: BugItem[]) => list.filter((b) => !isBugRemoved(b) && inRange(b.createdDate.slice(0, 10), from, to)).length;
+  const b = created(bugs);
+  const total = b + created(pbis);
+  return total ? Math.round((b / total) * 1000) / 10 : null;
+}
+
+export interface SquadRow extends BugSummary { squad: string; avgOpenAgeDays: number | null; bugRatio: number | null }
+
+/** Comparativo por squad: resumo dos bugs, tempo médio parado dos abertos e proporção de bugs. Mais abertos primeiro. */
+export function squadComparison(items: BugItem[], from: string | null, to: string): SquadRow[] {
+  const bugs = items.filter((b) => b.kind === "bug");
+  const pbis = items.filter((b) => b.kind === "pbi");
+  const squads = [...new Set(bugs.map((b) => b.squad))];
+  return squads.map((squad) => {
+    const own = bugs.filter((b) => b.squad === squad);
+    const ages = agingOpen(own, to).map((b) => b.ageDays);
+    return {
+      squad, ...bugSummary(own, from, to),
+      // Mesma projeção do gráfico: ritmo das últimas 8 semanas, sem novos itens.
+      projection: own.some(isOpen) ? clearProjection(own, to).date : null,
+      avgOpenAgeDays: ages.length ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : null,
+      bugRatio: bugRatio(own, pbis.filter((b) => b.squad === squad), from, to),
+    };
+  }).sort((a, b) => b.open - a.open || b.total - a.total || a.squad.localeCompare(b.squad));
 }
