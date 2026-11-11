@@ -45,5 +45,6 @@ export const backend = {
   createWidget: async (value: Omit<WidgetRecord, "id">) => mapWidget(await request<BackendWidget>("/api/v1/widgets", { method: "POST", body: body({ projectId: value.project_id, product: value.product, widgetType: value.widget_type, title: value.title, width: value.width, position: value.position }) })),
   updateWidget: async (value: WidgetRecord) => mapWidget(await request<BackendWidget>(`/api/v1/widgets/${encodeURIComponent(value.id)}`, { method: "PUT", body: body({ projectId: value.project_id, product: value.product, widgetType: value.widget_type, title: value.title, width: value.width, position: value.position }) })),
   deleteWidget: (id: string) => request<void>(`/api/v1/widgets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  saveAzureSettings: (value: { organization: string; project: string; rootArea: string; team: string }) => request<void>("/api/v1/settings/azure", { method: "PUT", body: body(value) }),
   deleteWidgets: (projectId: string | null, product: string) => request<void>(`/api/v1/widgets?${new URLSearchParams({ product, ...(projectId ? { projectId } : {}) })}`, { method: "DELETE" }),
 };

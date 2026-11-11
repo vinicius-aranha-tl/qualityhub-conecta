@@ -157,6 +157,42 @@ api.MapPut("/metric-snapshots/{projectId}", async (string projectId, System.Text
     await snapshots.SaveAsync(projectId, json, ct);
     return Results.NoContent();
 });
+// Azure DevOps (bugs): uma configuração para todos os projetos e a última leitura salva.
+// Leitura para qualquer usuário autenticado; gravação só para administradores (filtro do grupo).
+api.MapGet("/settings/azure", async (IMongoDatabase db, CancellationToken ct) =>
+{
+    var doc = await db.GetCollection<BsonDocument>("app_settings").Find(Builders<BsonDocument>.Filter.Eq("_id", "azure-devops")).FirstOrDefaultAsync(ct);
+    return doc is null ? Results.NotFound() : Results.Ok(new
+    {
+        organization = doc.GetValue("organization", "").AsString,
+        project = doc.GetValue("project", "").AsString,
+        rootArea = doc.GetValue("rootArea", "").AsString,
+        team = doc.GetValue("team", "").AsString
+    });
+});
+api.MapPut("/settings/azure", async (AzureSettingsInput input, IMongoDatabase db, CancellationToken ct) =>
+{
+    if (!input.Valid()) return Results.BadRequest(new { message = "Configuração do Azure DevOps inválida." });
+    var doc = new BsonDocument { { "_id", "azure-devops" }, { "organization", input.Organization.Trim() }, { "project", input.Project.Trim() }, { "rootArea", input.RootArea.Trim() }, { "team", input.Team.Trim() }, { "updatedAt", DateTime.UtcNow } };
+    await db.GetCollection<BsonDocument>("app_settings").ReplaceOneAsync(Builders<BsonDocument>.Filter.Eq("_id", "azure-devops"), doc, new ReplaceOptions { IsUpsert = true }, ct);
+    return Results.NoContent();
+});
+api.MapGet("/bug-snapshot", async (IMongoDatabase db, CancellationToken ct) =>
+{
+    var doc = await db.GetCollection<BsonDocument>("bug_snapshots").Find(Builders<BsonDocument>.Filter.Eq("_id", "latest")).FirstOrDefaultAsync(ct);
+    return doc is null ? Results.NotFound() : Results.Content(doc["dataset"].AsBsonDocument.ToJson(new MongoDB.Bson.IO.JsonWriterSettings { OutputMode = MongoDB.Bson.IO.JsonOutputMode.RelaxedExtendedJson }), "application/json");
+});
+api.MapPut("/bug-snapshot", async (System.Text.Json.JsonElement input, IMongoDatabase db, CancellationToken ct) =>
+{
+    if (input.ValueKind != System.Text.Json.JsonValueKind.Object ||
+        !input.TryGetProperty("items", out var items) || items.ValueKind != System.Text.Json.JsonValueKind.Array ||
+        !input.TryGetProperty("fetchedAt", out var fetchedAt) || fetchedAt.ValueKind != System.Text.Json.JsonValueKind.String) return Results.BadRequest();
+    var json = input.GetRawText();
+    if (System.Text.Encoding.UTF8.GetByteCount(json) > 12_000_000) return Results.BadRequest(new { message = "Captura excede o tamanho permitido." });
+    var doc = new BsonDocument { { "_id", "latest" }, { "syncedAt", DateTime.UtcNow }, { "dataset", BsonDocument.Parse(json) } };
+    await db.GetCollection<BsonDocument>("bug_snapshots").ReplaceOneAsync(Builders<BsonDocument>.Filter.Eq("_id", "latest"), doc, new ReplaceOptions { IsUpsert = true }, ct);
+    return Results.NoContent();
+});
 var usersApi = api.MapGroup("/users").RequireAuthorization(policy => policy.RequireRole("admin"));
 usersApi.MapGet("/", async (IMongoDatabase db, CancellationToken ct) =>
     Results.Ok((await db.GetCollection<BsonDocument>("users").Find(FilterDefinition<BsonDocument>.Empty).ToListAsync(ct))
@@ -306,6 +342,18 @@ record WidgetInput(string? ProjectId, string Product, string WidgetType, string 
     public bool Valid() => Product is "api" or "ui" && Width is "half" or "full" &&
         !string.IsNullOrWhiteSpace(WidgetType) && WidgetType.Length <= 100 &&
         !string.IsNullOrWhiteSpace(Title) && Title.Length <= 120 && Position >= 0;
+}
+
+/// <summary>Configuração única do Azure DevOps (aba Bugs). Os valores entram em URL e em consulta WIQL: só letras, números e separadores simples.</summary>
+record AzureSettingsInput(string Organization, string Project, string RootArea, string Team)
+{
+    public bool Valid() =>
+        Match(Organization, "^[A-Za-z0-9_.-]{1,100}$") &&
+        Match(Project, @"^[\p{L}\p{N} _.-]{1,100}$") &&
+        Match(RootArea, @"^[\p{L}\p{N} _.\\-]{1,250}$") &&
+        Match(Team, @"^[\p{L}\p{N} _.-]{1,100}$");
+    private static bool Match(string? value, string pattern) =>
+        !string.IsNullOrWhiteSpace(value) && System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), pattern);
 }
 
 record ProjectInput(string Name, string Slug, string? Description,

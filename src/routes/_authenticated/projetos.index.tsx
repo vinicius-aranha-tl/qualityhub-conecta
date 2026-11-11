@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState, PageTitle, fmtDate } from "@/components/dash/primitives";
 import { useAuth } from "@/hooks/useAuth";
+import { LoadingOverlay } from "@/components/dash/LoadingOverlay";
 
 export const Route = createFileRoute("/_authenticated/projetos/")({
   head: () => ({
@@ -72,7 +73,7 @@ function ProjectsPage() {
         <PageTitle title="Projetos" subtitle="Cada projeto tem seus próprios painéis de API e UI e suas conexões com o GitHub." />
         {isAdmin && <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Novo projeto</Button>}
       </div>
-      {q.error ? <EmptyState><div className="grid justify-items-center gap-3"><span>Não foi possível carregar os projetos.</span><Button variant="outline" onClick={() => q.refetch()}>Tentar novamente</Button></div></EmptyState> : q.isLoading ? null : !q.data?.length ? (
+      {q.error ? <EmptyState><div className="grid justify-items-center gap-3"><span>Não foi possível carregar os projetos.</span><Button variant="outline" onClick={() => q.refetch()}>Tentar novamente</Button></div></EmptyState> : q.isLoading ? <LoadingOverlay message="Carregando projetos…" /> : !q.data?.length ? (
         <EmptyState>Nenhum projeto ainda.</EmptyState>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

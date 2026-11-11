@@ -14,6 +14,7 @@ import { EmptyState, Panel } from "@/components/dash/primitives";
 
 import { useAuth } from "@/hooks/useAuth";
 import { testRepo, type FileCheck } from "@/lib/sources.functions";
+import { LoadingOverlay } from "@/components/dash/LoadingOverlay";
 
 export const Route = createFileRoute("/_authenticated/projetos/$slug")({
   validateSearch: (s: Record<string, unknown>): { tab?: "painel" | "fontes" } => (s["tab"] === "fontes" ? { tab: "fontes" } : {}),
@@ -39,7 +40,7 @@ function ProjectPage() {
       return backend.project(slug);
     },
   });
-  if (q.isLoading) return null;
+  if (q.isLoading) return <LoadingOverlay message="Carregando projeto…" />;
   if (q.error) return <EmptyState><div className="grid justify-items-center gap-3"><span>Não foi possível carregar o projeto.</span><Button variant="outline" onClick={() => q.refetch()}>Tentar novamente</Button></div></EmptyState>;
   if (!q.data) return <EmptyState>Projeto não encontrado. <Link to="/projetos" className="ml-1 text-primary underline">Voltar</Link></EmptyState>;
   const p = q.data;

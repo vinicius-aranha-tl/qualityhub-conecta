@@ -6,7 +6,7 @@ import type { ChartKind } from "./chartKinds";
 import { buildSpecial, ORIGIN_LABEL } from "@/data/useDashboard";
 import { EmptyState, StatCard, fmtDate, fmtInt, fmtPct } from "./primitives";
 import type { DashData, SourceUse } from "@/data/useDashboard";
-import { causeDistribution, computeProjection, coverageWaterfall, dailyRate, dailyResults, failureHeatmap, qualityFunnel, rateByOrigin, testStability, topFailingTests, failureRows, flakyTable, summarize, testCount, type Product, type Projection } from "@/lib/metrics";
+import { causeDistribution, computeProjection, currentTests, coverageWaterfall, dailyRate, dailyResults, failureHeatmap, qualityFunnel, rateByOrigin, testStability, topFailingTests, failureRows, flakyTable, summarize, testCount, type Product, type Projection } from "@/lib/metrics";
 
 export const RATE_INFO = "Taxa = (aprovados + flaky) ÷ total de resultados. Flaky terminou aprovado após retry interno e não reduz o sucesso. Falha = teste que falhou definitivamente. Reruns da mesma Action são ignorados; só conta a primeira tentativa de cada gatilho. Verde ≥ 90%, amarelo 80–89,99%, vermelho < 80%.";
 export const PROJECTION_INFO = "Velocidade = inclinação (regressão linear) das últimas até 8 semanas. A projeção só é desenhada quando a automação cresce mais rápido que o produto e há pelo menos 3 semanas de histórico. Semanas restantes = diferença atual ÷ (velocidade automação − velocidade produto). Condições duplicadas contam uma vez; cenários extras fora do contrato não contam.";
@@ -15,7 +15,7 @@ export type WidgetType = "success_gauge" | "summary_cards" | "daily_results" | "
 
 export const WIDGET_CATALOG: Record<WidgetType, { kind: ChartKind; label: string; description: string; defaultTitle: string; defaultWidth: "half" | "full"; info?: string }> = {
   success_gauge: { kind: "gauge", label: "Taxa de sucesso", description: "Velocímetro com faixas verde/amarelo/vermelho em relação à meta.", defaultTitle: "Taxa de sucesso", defaultWidth: "half", info: RATE_INFO },
-  summary_cards: { kind: "card", label: "Números principais", description: "Resumo das execuções agendadas e da estabilidade dos testes.", defaultTitle: "Resumo", defaultWidth: "half", info: "Testes: títulos distintos identificados no histórico de execuções agendadas disponível. Esse total depende dos dados capturados e não garante o total atual do repositório. Execuções válidas: execuções agendadas no período selecionado, contando apenas a primeira tentativa de cada execução da Action. Falhas definitivas: resultados de testes que continuaram falhando ao final das tentativas; o mesmo cenário pode contar mais de uma vez em execuções diferentes. Flaky tests: testes distintos que apresentaram falha em pelo menos três execuções no período selecionado, incluindo falhas recuperadas por retentativa ou definitivas. A classificação acompanha o período escolhido." },
+  summary_cards: { kind: "card", label: "Números principais", description: "Resumo das execuções agendadas e da estabilidade dos testes.", defaultTitle: "Resumo", defaultWidth: "half", info: "Testes: cada título de cenário é um teste. Conta os cenários da execução agendada mais recente de cada projeto e, na visão geral, soma os projetos. Teste renomeado ou removido sai da conta na execução seguinte. Execuções válidas: execuções agendadas no período selecionado, contando apenas a primeira tentativa de cada execução da Action. Falhas definitivas: resultados de testes que continuaram falhando ao final das tentativas; o mesmo cenário pode contar mais de uma vez em execuções diferentes. Flaky tests: testes distintos que apresentaram falha em pelo menos três execuções no período selecionado, incluindo falhas recuperadas por retentativa ou definitivas. A classificação acompanha o período escolhido." },
   evolution: { kind: "line", label: "Produto vs automação", description: "Cenários planejados representam condições documentadas pelo coletor da API; cenários automatizados são as condições com evidência correspondente. A contagem não representa produtos nem simplesmente a quantidade de testes.", defaultTitle: "Cruzamento de métricas: cenários planejados vs. automatizados", defaultWidth: "full", info: PROJECTION_INFO },
   rate_trend: { kind: "bands", label: "Taxa de sucesso por dia", description: "Linha da taxa diária sobre as faixas da meta (≥ 90% verde).", defaultTitle: "Taxa de sucesso diária vs meta", defaultWidth: "full", info: RATE_INFO },
   daily_columns: { kind: "column", label: "Resultados diários (colunas)", description: "Aprovados, flaky e falhas por dia em colunas empilhadas.", defaultTitle: "Resultados diários", defaultWidth: "full", info: "Soma diária considerando apenas a primeira tentativa de cada gatilho." },
@@ -124,9 +124,10 @@ export function WidgetBody({ type, d, product, periodLabel }: { type: string; d:
       const flaky = d.specialByProduct.flaky;
       const flakyUnavailable = flaky.used.length > 0 && flaky.used.every((source) => source.fallback && source.reason);
       const flakyCount = new Set(flaky.rows.map((r) => `${r.dataSource}|${r.title}`)).size;
+      const tests = currentTests(d.valid, product);
       return (
         <div className="grid grid-cols-2 gap-3">
-          <StatCard prominent label="Testes" value={fmtInt(testCount(d.valid, product))} tone="product" />
+          <StatCard prominent label="Testes" value={fmtInt(tests.total)} tone="product" hint={tests.projects.length === 1 ? `Cenários da execução de ${fmtDate(tests.projects[0]!.date)}` : tests.projects.length ? `Soma da última execução de ${tests.projects.length} projetos` : ""} />
           <StatCard prominent label="Execuções válidas" value={fmtInt(d.inPeriod.length)} hint="Reruns ignorados" />
           <StatCard prominent label="Falhas definitivas" value={fmtInt(s.failed)} tone={s.failed ? "danger" : "success"} />
           <StatCard prominent label="Flaky tests" value={flakyUnavailable ? "—" : fmtInt(flakyCount)} tone={flakyUnavailable ? undefined : flakyCount ? "warning" : "success"} />
@@ -149,7 +150,7 @@ export function WidgetBody({ type, d, product, periodLabel }: { type: string; d:
             <div className="mt-4 rounded-lg border border-warning/40 p-3 text-sm">
               <div className="grid gap-3 sm:grid-cols-3">
                 <div><div className="text-xs text-muted-foreground">Condições no inventário preliminar</div><div className="font-mono text-lg">{fmtInt(last!.productConditions)}</div></div>
-                <div><div className="text-xs text-muted-foreground">Testes identificados nas execuções</div><div className="font-mono text-lg">{fmtInt(testCount(d.valid, product))}</div></div>
+                <div><div className="text-xs text-muted-foreground">Testes na última execução</div><div className="font-mono text-lg">{fmtInt(testCount(d.valid, product))}</div></div>
                 <div><div className="text-xs text-muted-foreground">Cobertura do contrato</div><div className="text-lg">Ainda não apurada</div></div>
               </div>
               <p className="mt-3 text-warning">O inventário inclui respostas estimadas e ainda precisa ser validado contra o Swagger da versão implantada. A quantidade de testes não indica quantas condições estão cobertas; a projeção depende desse mapeamento e do histórico.</p>

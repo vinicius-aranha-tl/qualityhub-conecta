@@ -1,5 +1,5 @@
-import type { CapturedCall, CapturedEvidence, CapturedHttpError, CapturedNetworkFailure, ContractCondition, ContractCoverage, EvolutionPoint, Execution, Product, TestResult, Trigger } from "@/lib/metrics";
-import { groupFailureOccurrences } from "@/lib/metrics";
+import type { BugItem, BugKind, CapturedCall, CapturedEvidence, CapturedHttpError, CapturedNetworkFailure, ContractCondition, ContractCoverage, EvolutionPoint, Execution, Product, TestResult, Trigger } from "@/lib/metrics";
+import { groupFailureOccurrences, squadOf } from "@/lib/metrics";
 
 /** Files published by the automations under quality-hub/ on the metrics branch. */
 export const QUALITY_HUB_FILES: Record<Product, string[]> = {
@@ -312,4 +312,46 @@ function failureRow(f: Obj, i: number, dataSource: string): SpecialFailureRow {
     dataSource: str(f["dataSourceName"]) || dataSource,
     firstSeen: str(f["firstSeen"]), firstOccurrence: str(f["firstOccurrence"]), lastOccurrence: str(f["lastOccurrence"]),
   };
+}
+
+/**
+ * Work items do Azure DevOps (resposta de _apis/wit/workitemsbatch) → BugItem.
+ * `categories` traz, por tipo, a categoria de cada estado (ex.: Bug → Done → Completed).
+ * O tipo define o grupo: Bug → bug, Task → defeito (a consulta já filtra a tag DEFEITO), demais → PBI.
+ * `columnField` é o campo da coluna do quadro do time (lido da API do quadro).
+ */
+export interface AzureNormalizeOptions { categories: Record<string, Record<string, string>>; webBase: string; rootArea: string; columnField: string }
+export function normalizeAzureWorkItems(raw: unknown, options: AzureNormalizeOptions): BugItem[] {
+  if (!isObj(raw) || !Array.isArray(raw["value"])) throw new FormatError('resposta do Azure DevOps sem a lista "value"');
+  return (raw["value"] as unknown[]).filter(isObj).flatMap((item) => {
+    const id = Number(item["id"]);
+    const fields = isObj(item["fields"]) ? item["fields"] : {};
+    if (!Number.isInteger(id)) return [];
+    const field = (name: string) => fields[name];
+    const created = toDate(field("System.CreatedDate"));
+    if (!created) return [];
+    const type = text(field("System.WorkItemType"), 60);
+    const kind: BugKind = type === "Bug" ? "bug" : type === "Task" ? "defeito" : "pbi";
+    const state = text(field("System.State"), 60);
+    const person = field("System.AssignedTo");
+    const iso = (v: unknown) => (typeof v === "string" && toDate(v) ? v : null);
+    const areaPath = text(field("System.AreaPath"), 250);
+    return [{
+      id, kind,
+      title: text(field("System.Title"), 300) || `#${id}`,
+      state: state || "Sem estado",
+      category: options.categories[type]?.[state] ?? "Proposed",
+      severity: text(field("Microsoft.VSTS.Common.Severity"), 60),
+      priority: field("Microsoft.VSTS.Common.Priority") == null ? "" : String(field("Microsoft.VSTS.Common.Priority")),
+      assignedTo: isObj(person) ? text(person["displayName"], 120) : text(person, 120),
+      createdDate: String(field("System.CreatedDate")),
+      closedDate: iso(field("Microsoft.VSTS.Common.ClosedDate")),
+      stateChangeDate: iso(field("Microsoft.VSTS.Common.StateChangeDate")),
+      iteration: text(field("System.IterationPath"), 200),
+      areaPath,
+      squad: squadOf(areaPath, options.rootArea),
+      column: kind === "defeito" ? "" : text(field(options.columnField) ?? field("System.BoardColumn"), 120),
+      url: `${options.webBase}/_workitems/edit/${id}`,
+    }];
+  });
 }

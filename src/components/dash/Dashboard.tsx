@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import { PERIOD_LABEL, useDashboardData, useFilters } from "@/data/useDashboard";
@@ -20,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState, Panel } from "./primitives";
 import { SourceBadges } from "./SourceBadges";
 import { DEFAULT_WIDGETS, HIDDEN_WIDGETS, orderPanels, WIDGET_CATALOG, WidgetBody, type WidgetType } from "./widgets";
+import { LoadingOverlay } from "@/components/dash/LoadingOverlay";
 
 const ALL_PRODUCTS: Product[] = ["api", "ui"];
 
@@ -174,7 +174,7 @@ function ProductDashboard({ projectId, slug, product, editMode }: { projectId: s
   if (error) return <EmptyState>Não foi possível carregar os dados: {(error as Error).message}</EmptyState>;
   if (wq.error) return <EmptyState><div className="grid justify-items-center gap-3"><span>Não foi possível carregar a configuração dos gráficos.</span><Button variant="outline" onClick={() => wq.refetch()}>Tentar novamente</Button></div></EmptyState>;
   if (isLoading || !d || wq.isLoading)
-    return <div className="grid gap-4 md:grid-cols-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-56 rounded-xl" />)}</div>;
+    return <LoadingOverlay />;
   if (!d.projects.length) return <EmptyState>Nenhum projeto cadastrado ainda. Crie um em Projetos.</EmptyState>;
 
   return (
