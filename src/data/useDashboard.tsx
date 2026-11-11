@@ -1,10 +1,10 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { aggregateEvolution, daysAgoISO, dedupeExecutions, failureRows, filterExecutions, flakyTable, causeDistribution, groupFailureOccurrences, type Product, type Trigger } from "@/lib/metrics";
+import { aggregateEvolution, classifyFailures, daysAgoISO, dedupeExecutions, detectIncidents, failureRows, filterExecutions, flakyTable, causeDistribution, groupFailureOccurrences, type ClassifiedFailure, type ContractCoverage, type FailureIncident, type Product, type TestOccurrence, type Trigger } from "@/lib/metrics";
 import { scenarioTitle, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 import type { ProjectData } from "@/lib/sources.functions";
-import { loadDashboardData } from "@/lib/sources.functions";
+import { loadBugs, loadDashboardData } from "@/lib/sources.functions";
 
 export type PeriodKey = "7" | "15" | "30" | "90" | "all";
 export const PERIOD_LABEL: Record<PeriodKey, string> = { "7": "Últimos 7 dias", "15": "Últimos 15 dias", "30": "Últimos 30 dias", "90": "Últimos 90 dias", all: "Todo o histórico" };
@@ -55,9 +55,17 @@ export function useDashboardData(slug: string | null, product: Product) {
       periodDays,
       special: buildSpecial(q.data, now, undefined, periodDays),
       specialByProduct: buildSpecial(q.data, now, product, periodDays),
+      nature: buildNature(q.data, now, periodDays),
+      contract: buildContract(q.data),
     };
   }, [q.data, filters, product]);
   return { ...q, d, periodLabel: PERIOD_LABEL[filters.period] };
+}
+
+/** Bugs do Azure DevOps (configuração única, todas as squads). Mesmo ciclo de 5 min e o mesmo botão "Atualizar dados". */
+export function useBugs() {
+  const load = useServerFn(loadBugs);
+  return useQuery({ queryKey: ["dataset", "bugs"], queryFn: () => load({ data: { force: Date.now() < forceUntil } }), staleTime: 5 * 60_000, refetchInterval: 5 * 60_000 });
 }
 
 export type DashData = NonNullable<ReturnType<typeof useDashboardData>["d"]>;
@@ -168,4 +176,71 @@ export function buildSpecial(projects: ProjectData[], now: Date, selectedProduct
   out.reasons.rows = [...merged.entries()].map(([cause, value]) => ({ cause, value })).sort((a, b) => b.value - a.value);
   out.lifecycle.rows.sort((a, b) => b.occurrences - a.occurrences);
   return out;
+}
+
+export interface ContractData {
+  /** Contrato de cada projeto de API que publica api-swagger-coverage-current.json. */
+  sources: { project: string; coverage: ContractCoverage }[];
+  /** Projetos sem o arquivo de contrato (ou com erro), com o motivo. */
+  missing: { project: string; reason: string }[];
+}
+
+/** Cobertura do contrato de todos os projetos de API, sem depender de período (é a foto mais recente). */
+export function buildContract(projects: ProjectData[]): ContractData {
+  const out: ContractData = { sources: [], missing: [] };
+  for (const p of projects) {
+    const contract = p.special?.api?.contract;
+    if (contract?.data) out.sources.push({ project: p.project.name, coverage: contract.data });
+    else out.missing.push({ project: p.project.name, reason: contract?.status && "message" in contract.status && contract.status.message ? String(contract.status.message) : "Contrato ainda não sincronizado. Atualize os dados." });
+  }
+  return out;
+}
+
+export interface NatureData {
+  rows: ClassifiedFailure[];
+  incidents: FailureIncident[];
+  /** Produtos sem histórico de testes no período (nada a classificar). */
+  missing: Product[];
+  used: SourceUse[];
+}
+
+/**
+ * Falhas definitivas de API e UI classificadas por natureza. Fonte principal: test-history.json
+ * (todos os testes de cada execução agendada, para detectar falhas em massa). Quando a mensagem
+ * não foi sincronizada, usa o erro do failure-lifecycle do mesmo teste e dia; sem test-history,
+ * usa o history.json.
+ */
+export function buildNature(projects: ProjectData[], now: Date, periodDays: number | null): NatureData {
+  const tests: TestOccurrence[] = [];
+  const used: SourceUse[] = [];
+  const has = new Set<Product>();
+  const from = periodDays == null ? null : daysAgoISO(now, periodDays - 1), end = daysAgoISO(now, 0);
+  const inPeriod = (date: string) => (!from || date >= from) && date <= end;
+  for (const p of projects)
+    for (const product of ["api", "ui"] as const) {
+      const dataSource = `${p.project.name} · ${product.toUpperCase()}`;
+      const dated = p.special?.[product]?.testHistory?.data;
+      if (dated && Array.isArray(dated.tests)) {
+        const lifecycle = p.special?.[product]?.lifecycle?.data ?? [];
+        const errorFor = (testKey: string, date: string) => {
+          const matches = lifecycle.filter((row) => row.testKey === testKey && row.error && row.firstOccurrence.slice(0, 10) <= date && date <= row.lastOccurrence.slice(0, 10));
+          return matches.length === 1 ? matches[0]!.error : undefined;
+        };
+        for (const t of dated.tests) {
+          if (!inPeriod(t.date)) continue;
+          has.add(product);
+          tests.push({ product, date: t.date, runId: t.runId, testKey: t.testKey, title: scenarioTitle(t.title), status: t.status, summary: t.status === "failed" ? t.summary ?? errorFor(t.testKey, t.date) : undefined, cause: t.cause, runUrl: t.runUrl, captured: t.captured, dataSource });
+        }
+        if (!used.some((u) => u.product === product && !u.fallback)) used.push({ product, file: p.special![product]!.testHistory!.file, fallback: false });
+        continue;
+      }
+      const runs = filterExecutions(dedupeExecutions(p.executions).filter((e) => e.product === product), { product, origins: ["scheduled"], periodDays, now });
+      for (const run of runs)
+        for (const r of run.results) {
+          has.add(product);
+          tests.push({ product, date: run.date, runId: run.id, testKey: r.title, title: scenarioTitle(r.title), status: r.status, summary: r.error, cause: r.cause, dataSource });
+        }
+      if (runs.length && !used.some((u) => u.product === product && u.fallback)) used.push({ product, file: "history.json", fallback: true, reason: "Sem test-history.json: falhas em massa detectadas pelo histórico de execuções." });
+    }
+  return { rows: classifyFailures(tests), incidents: detectIncidents(tests), missing: (["api", "ui"] as const).filter((product) => !has.has(product)), used };
 }

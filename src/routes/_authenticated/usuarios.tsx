@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { LoadingOverlay } from "@/components/dash/LoadingOverlay";
 
 export const Route = createFileRoute("/_authenticated/usuarios")({ component: UsersPage });
 type User = { id: string; email: string; role: "admin" | "editor" | "viewer" };
@@ -22,7 +23,7 @@ function UsersPage() {
   if (!isAdmin) return <EmptyState>Apenas o administrador pode gerenciar usuários.</EmptyState>;
   return <><div className="flex flex-wrap items-start justify-between gap-4"><PageTitle title="Usuários" subtitle="Gerencie quem acessa a plataforma e o que cada pessoa pode fazer." /><Button onClick={() => setEditing("new")}>Adicionar usuário</Button></div>
     <Panel title="Acessos da plataforma"><p className="mb-4 text-sm text-muted-foreground">Administradores podem gerenciar projetos, gráficos e usuários. Usuários de visualização podem consultar os painéis e exportar relatórios.</p>
-      {q.isLoading ? <p>Carregando…</p> : q.isError ? <EmptyState>Não foi possível carregar os usuários.</EmptyState> : !q.data?.length ? <EmptyState>Nenhum usuário adicional cadastrado.</EmptyState> : <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-border"><th className="p-3">E-mail</th><th className="p-3">Perfil</th><th className="p-3">Ações</th></tr></thead><tbody>{q.data.map(u => <tr key={u.id} className="border-b border-border"><td className="p-3">{u.email}</td><td className="p-3">{u.role === "admin" ? "Administrador" : u.role === "editor" ? "Visualização (antigo editor)" : "Visualização"}</td><td className="flex gap-2 p-3"><Button size="sm" variant="secondary" onClick={() => setEditing(u)}>Editar</Button><Button size="sm" variant="outline" onClick={() => { if (window.confirm(`Remover acesso de ${u.email}?`)) del.mutate(u.id); }}>Remover</Button></td></tr>)}</tbody></table></div>}
+      {q.isLoading ? <LoadingOverlay message="Carregando usuários…" /> : q.isError ? <EmptyState>Não foi possível carregar os usuários.</EmptyState> : !q.data?.length ? <EmptyState>Nenhum usuário adicional cadastrado.</EmptyState> : <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-border"><th className="p-3">E-mail</th><th className="p-3">Perfil</th><th className="p-3">Ações</th></tr></thead><tbody>{q.data.map(u => <tr key={u.id} className="border-b border-border"><td className="p-3">{u.email}</td><td className="p-3">{u.role === "admin" ? "Administrador" : u.role === "editor" ? "Visualização (antigo editor)" : "Visualização"}</td><td className="flex gap-2 p-3"><Button size="sm" variant="secondary" onClick={() => setEditing(u)}>Editar</Button><Button size="sm" variant="outline" onClick={() => { if (window.confirm(`Remover acesso de ${u.email}?`)) del.mutate(u.id); }}>Remover</Button></td></tr>)}</tbody></table></div>}
     </Panel>{editing && <UserDialog initial={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}</>;
 }
 function UserDialog({ initial, onClose }: { initial: User | null; onClose: () => void }) {

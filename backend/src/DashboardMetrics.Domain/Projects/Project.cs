@@ -6,6 +6,8 @@ public sealed class Project
     public string Name { get; set; } = "";
     public string Slug { get; set; } = "";
     public string Description { get; set; } = "";
+    /// <summary>Frentes testadas: "api-ui", "api" (só back-end) ou "ui" (só front-end). Projetos antigos sem o campo são "api-ui".</summary>
+    public string Fronts { get; set; } = ProjectFronts.ApiUi;
     public string? ApiRepoOwner { get; set; }
     public string? ApiRepoName { get; set; }
     public string ApiBranch { get; set; } = "automation-metrics";
@@ -21,4 +23,14 @@ public sealed class Project
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastSyncedAt { get; set; }
     public string? LastSyncError { get; set; }
+}
+
+public static class ProjectFronts
+{
+    public const string ApiUi = "api-ui";
+    public const string Api = "api";
+    public const string Ui = "ui";
+    public static bool IsValid(string? value) => value is ApiUi or Api or Ui;
+    public static bool HasApi(string value) => value is ApiUi or Api;
+    public static bool HasUi(string value) => value is ApiUi or Ui;
 }

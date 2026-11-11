@@ -16,6 +16,8 @@ vi.mock("./widgets", () => ({
   DEFAULT_WIDGETS: [{ widget_type: "success_gauge", width: "half" }],
   WIDGET_CATALOG: { success_gauge: { defaultTitle: "Taxa de sucesso", description: "Taxa", info: "Informações" }, project_ranking: { defaultTitle: "Projetos", description: "Projetos" } },
   WidgetBody: () => <div>Gráfico</div>,
+  HIDDEN_WIDGETS: [],
+  orderPanels: <T,>(widgets: T[]) => widgets,
 }));
 
 afterEach(() => { cleanup(); access.canEdit = true; });

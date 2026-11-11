@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 import { Bug, FolderKanban, LayoutDashboard, LogOut, Menu, RefreshCw, Users, X } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
+import { LoadingOverlay } from "./LoadingOverlay";
 import { backend } from "@/lib/backend-client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PERIOD_LABEL, requestForcedRefresh, useFilters, type PeriodKey } from "@/data/useDashboard";
 import { cn } from "@/lib/utils";
 
-export const APP_VERSION = "0.10.0";
+export const APP_VERSION = "0.14.0";
 
 const NAV = [
   { to: "/visao-geral", label: "Visão geral", icon: LayoutDashboard, admin: false },
@@ -26,6 +27,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const lastUpdate = Math.max(0, ...qc.getQueryCache().findAll({ queryKey: ["dataset"] }).map((q) => q.state.dataUpdatedAt));
   const { user, isAdmin, canEdit } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Carregamento em tela cheia só quando o usuário pede a atualização (a atualização automática de 5 min segue discreta).
+  const [refreshing, setRefreshing] = useState(false);
+  async function refresh() {
+    setRefreshing(true);
+    requestForcedRefresh();
+    try { await qc.invalidateQueries({ queryKey: ["dataset"] }); } finally { setRefreshing(false); }
+  }
   const navigate = useNavigate();
   async function signOut() {
     await qc.cancelQueries();
@@ -77,10 +85,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </SelectContent>
           </Select>
           {lastUpdate > 0 && <span className="text-xs text-muted-foreground">Última atualização: {new Date(lastUpdate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>}
-          <Button size="sm" onClick={() => { requestForcedRefresh(); qc.invalidateQueries({ queryKey: ["dataset"] }); }} disabled={fetching}>
+          <Button size="sm" onClick={refresh} disabled={fetching}>
             <RefreshCw className={cn("h-4 w-4", fetching && "animate-spin")} /> Atualizar dados
           </Button>
         </header>
+        {refreshing && <LoadingOverlay message="Atualizando dados…" />}
         <main className="mx-auto w-full max-w-[1800px] min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8 xl:px-10">{children}</main>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeDatedFailures, scenarioTitle } from "./normalize";
+import { normalizeAzureWorkItems, normalizeContractCoverage, normalizeDatedFailures, readCapturedEvidence, scenarioTitle } from "./normalize";
 
 it("exibe somente o título do cenário sem alterar títulos que não contêm hierarquia", () => {
   expect(scenarioTitle("api/rota.spec.js › Cadastro › PBI-123 - Criar objetivo")).toBe("PBI-123 - Criar objetivo");
@@ -106,4 +106,62 @@ describe("specialized files", () => {
   it("missing failures list is a format error", () => {
     expect(() => normalizeLifecycle({ tests: [] }, "x")).toThrow();
   });
+});
+
+it("lê a evidência capturada aceitando só campos e tipos esperados", () => {
+  expect(readCapturedEvidence({
+    layer: "ui", phase: "acao", failedStep: "Quando abro as visitas", timedOut: true, pageUrl: "https://app/visitas",
+    httpErrors: [{ method: "get", url: "https://app/api/visitas", status: 404, type: "fetch" }, { url: "x", status: "404" }],
+    calls: [{ method: "post", url: "https://api/x", status: null, error: "ECONNREFUSED" }],
+    networkFailures: [{ method: "GET", url: "https://app/a", error: "net::ERR_FAILED" }], pageErrors: ["TypeError", 3], consoleErrors: "não é lista",
+    script: "<script>",
+  })).toEqual({
+    layer: "ui", phase: "acao", failedStep: "Quando abro as visitas", timedOut: true, pageUrl: "https://app/visitas",
+    httpErrors: [{ method: "GET", url: "https://app/api/visitas", status: 404, type: "fetch" }],
+    calls: [{ method: "POST", url: "https://api/x", status: null, error: "ECONNREFUSED" }],
+    networkFailures: [{ method: "GET", url: "https://app/a", error: "net::ERR_FAILED" }], pageErrors: ["TypeError"], consoleErrors: [],
+  });
+  expect(readCapturedEvidence(null)).toBeUndefined();
+  expect(readCapturedEvidence({ phase: "outra" })).toMatchObject({ phase: null, failedStep: null, calls: [] });
+  const history = normalizeDatedFailures({ results: [
+    { generatedAt: "2026-11-09T10:00:00Z", runId: 1, testKey: "a", status: "failed", event: "schedule", failureEvidence: { layer: "api", phase: "preparacao", calls: [] } },
+    { generatedAt: "2026-11-09T10:00:00Z", runId: 1, testKey: "b", status: "passed", event: "schedule", failureEvidence: { layer: "api" } },
+  ] });
+  expect(history.tests[0]!.captured).toMatchObject({ layer: "api", phase: "preparacao" });
+  expect(history.tests[1]!.captured).toBeUndefined();
+});
+
+it("lê o contrato de cobertura da API e rejeita condições inválidas", () => {
+  const result = normalizeContractCoverage({
+    generatedAt: "2026-11-09T20:37:48+00:00", source: { repository: "Conecta-ag/conecta-recomenda", branch: "main", commit: "306fb69" },
+    obligations: [
+      { method: "get", path: "/workspaces/{workspaceId}/visits", status: "200", covered: true, evidence: [{ testFile: "specs/GET-visits.spec.js", scenario: "Listar visitas" }] },
+      { method: "GET", path: "/workspaces/{workspaceId}/visits", status: 404, covered: false, evidence: [] },
+    ],
+  });
+  expect(result).toEqual({
+    generatedAt: "2026-11-09T20:37:48+00:00", sourceRepository: "Conecta-ag/conecta-recomenda", sourceBranch: "main", sourceCommit: "306fb69",
+    conditions: [
+      { method: "GET", path: "/workspaces/{workspaceId}/visits", status: "200", covered: true, testFile: "specs/GET-visits.spec.js", scenario: "Listar visitas" },
+      { method: "GET", path: "/workspaces/{workspaceId}/visits", status: "404", covered: false },
+    ],
+  });
+  expect(() => normalizeContractCoverage({ inventory: {} })).toThrow(/obligations/);
+  expect(() => normalizeContractCoverage({ obligations: [{ method: "GET", path: "sem-barra", status: "200" }] })).toThrow(/inválido/);
+});
+
+it("lê os work items do Azure DevOps com tipo, squad, coluna do quadro e link do item", () => {
+  const options = { categories: { Bug: { Done: "Completed", New: "Proposed" }, Task: { New: "Proposed" } }, webBase: "https://dev.azure.com/org/Proj", rootArea: String.raw`Proj\Development`, columnField: "WEF_X_Kanban.Column" };
+  const items = normalizeAzureWorkItems({ value: [
+    { id: 10, fields: { "System.WorkItemType": "Bug", "System.Title": "Erro ao salvar", "System.State": "Done", "System.CreatedDate": "2026-09-01T10:00:00Z", "Microsoft.VSTS.Common.ClosedDate": "2026-09-05T10:00:00Z", "Microsoft.VSTS.Common.StateChangeDate": "2026-09-05T10:00:00Z", "Microsoft.VSTS.Common.Priority": 2, "Microsoft.VSTS.Common.Severity": "3 - Medium", "System.AssignedTo": { displayName: "Fulano", uniqueName: "fulano@empresa.com" }, "System.AreaPath": String.raw`Proj\Development\Team Titans`, "WEF_X_Kanban.Column": "Done" } },
+    { id: 11, fields: { "System.WorkItemType": "Task", "System.State": "New", "System.CreatedDate": "2026-09-02T10:00:00Z", "System.AreaPath": String.raw`Proj\Development` } },
+    { id: 13, fields: { "System.WorkItemType": "Product Backlog Item", "System.State": "Approved", "System.CreatedDate": "2026-09-02T10:00:00Z", "System.BoardColumn": "C-Planned" } },
+    { id: "x", fields: {} },
+    { id: 12, fields: { "System.State": "New" } },
+  ] }, options);
+  expect(items[0]).toEqual({ id: 10, kind: "bug", title: "Erro ao salvar", state: "Done", category: "Completed", severity: "3 - Medium", priority: "2", assignedTo: "Fulano", createdDate: "2026-09-01T10:00:00Z", closedDate: "2026-09-05T10:00:00Z", stateChangeDate: "2026-09-05T10:00:00Z", iteration: "", areaPath: String.raw`Proj\Development\Team Titans`, squad: "Titans", column: "Done", url: "https://dev.azure.com/org/Proj/_workitems/edit/10" });
+  expect(items[1]).toMatchObject({ id: 11, kind: "defeito", title: "#11", category: "Proposed", squad: "Sem squad", column: "", closedDate: null });
+  expect(items[2]).toMatchObject({ id: 13, kind: "pbi", category: "Proposed", column: "C-Planned" });
+  expect(items).toHaveLength(3);
+  expect(() => normalizeAzureWorkItems({}, options)).toThrow(/value/);
 });
