@@ -41,3 +41,5 @@ admin.local.json.*
 .env
 .env.*
 !.env.example
+
+.vercel/

@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => ({
   plugins: [
     tailwindcss(), tsconfigPaths(),
     tanstackStart({ server: { entry: "server" } }),
-    ...(command === "build" ? [nitro({ defaultPreset: "netlify" })] : []),
+    ...(command === "build" ? [nitro({ defaultPreset: "vercel" })] : []),
     react(),
   ],
 }));
