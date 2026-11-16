@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bugQueries, mapLimit, pickBoard, wiqlString } from "@/lib/sources.functions";
+import { bugQueries, mapLimit, notSynced, pickBoard, wiqlString } from "@/lib/sources.functions";
 
 describe("mapLimit", () => {
   it("preserves order and never exceeds the concurrency limit", async () => {
@@ -35,5 +35,15 @@ describe("consultas do Azure DevOps", () => {
     expect(pickBoard([{ name: "Epics", url: "" }, { name: "Backlog items", url: "" }, { name: "Features", url: "" }])?.name).toBe("Backlog items");
     expect(pickBoard([{ name: "Epics", url: "" }, { name: "Custom", url: "" }])?.name).toBe("Custom");
     expect(pickBoard([])).toBeNull();
+  });
+});
+
+describe("projeto sem captura salva", () => {
+  it("aparece vazio com o aviso, sem inventar dados", () => {
+    const d = notSynced({ id: "1", name: "Visitas", slug: "visitas" }, "Sem acesso.");
+    expect(d.executions).toEqual([]);
+    expect(d.refreshError).toBe("Sem acesso.");
+    expect(d.sources.api.executions).toMatchObject({ mode: "unavailable", message: "Sem acesso." });
+    expect(d.special.api.lifecycle.data).toBeNull();
   });
 });
