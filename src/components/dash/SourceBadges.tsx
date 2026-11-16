@@ -28,7 +28,8 @@ export function SourceStatusPill({ s, label }: { s: SourceStatus; label: string 
 }
 
 export function SourceBadges({ projects, product }: { projects: ProjectData[]; product: Product }) {
-  const problems = projects.filter((p) => p.refreshError || p.sources[product].executions.mode !== "github" || p.sources[product].evolution.mode === "error");
+  // Projeto sem esta frente (ex.: só API na aba UI) não é problema: simplesmente não entra.
+  const problems = projects.filter((p) => p.refreshError || (p.sources[product].executions.url != null && (p.sources[product].executions.mode !== "github" || p.sources[product].evolution.mode === "error")));
   if (!problems.length) return null;
   return (
     <div className="flex flex-wrap gap-2">

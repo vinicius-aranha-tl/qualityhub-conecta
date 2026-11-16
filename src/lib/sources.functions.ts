@@ -116,6 +116,22 @@ export interface ProjectData {
   refreshError?: string;
 }
 
+/** Projeto sem nenhuma captura salva: aparece vazio com o aviso, sem derrubar os demais nem inventar dados. */
+export function notSynced(p: { id: string; name: string; slug: string }, message: string): ProjectData {
+  const none = { mode: "unavailable", url: null, message } as SourceStatus;
+  const special = () => ({
+    stability: { status: none, file: STABILITY_FILE, data: null },
+    reasons: { status: none, file: REASONS_FILE, data: null },
+    lifecycle: { status: none, file: LIFECYCLE_FILE, data: null },
+  });
+  return {
+    project: { id: p.id, name: p.name, slug: p.slug },
+    sources: { api: { executions: none, evolution: none }, ui: { executions: none, evolution: none } },
+    executions: [], evolution: { api: [], ui: [] }, special: { api: special(), ui: special() },
+    fetchedAt: new Date(0).toISOString(), refreshError: message,
+  };
+}
+
 /** Loads dashboard data for one project (by slug) or all projects. Never substitutes demonstration data for a real source. */
 export const loadDashboardData = createServerFn({ method: "POST" })
   .middleware([requireBackendAuth])
@@ -137,8 +153,7 @@ export const loadDashboardData = createServerFn({ method: "POST" })
       const cached = saved?.sourceFingerprint === fingerprint ? { ...saved, project: { id: p.id, name: p.name, slug: p.slug } } : null;
       const fresh = cached && Date.now() - Date.parse(cached.fetchedAt) < TTL;
       if (context.backendRole !== "admin") {
-        if (!cached) throw new Error(`As métricas de ${p.name} ainda não foram sincronizadas. Peça a um administrador para atualizar os dados.`);
-        return cached;
+        return cached ?? notSynced(p, `As métricas de ${p.name} ainda não foram sincronizadas. Peça a um administrador para atualizar os dados.`);
       }
       if (!force && fresh) return cached;
       const repo = {
@@ -184,11 +199,12 @@ export const loadDashboardData = createServerFn({ method: "POST" })
         };
       }
       const failed = (["api", "ui"] as const).some(product => sources[product].executions.mode === "error" || sources[product].evolution.mode === "error");
+      const dataset: ProjectData = { project: { id: p.id, name: p.name, slug: p.slug }, sources, executions, evolution, special, fetchedAt: new Date().toISOString(), sourceFingerprint: fingerprint };
       if (failed) {
         if (cached) return { ...cached, refreshError: "Não foi possível atualizar todos os dados no GitHub. Exibindo a última sincronização salva." };
-        throw new Error(`Não foi possível sincronizar as métricas de ${p.name} no GitHub.`);
+        // Sem captura salva: devolve o que foi lido (sem gravar) com a fonte em erro, para não derrubar os outros projetos.
+        return { ...dataset, refreshError: `Não foi possível sincronizar as métricas de ${p.name} no GitHub.` };
       }
-      const dataset: ProjectData = { project: { id: p.id, name: p.name, slug: p.slug }, sources, executions, evolution, special, fetchedAt: new Date().toISOString(), sourceFingerprint: fingerprint };
       const persisted = await fetch(snapshotUrl, { method: "PUT", headers: { cookie: context.backendCookie, "Content-Type": "application/json" }, body: JSON.stringify(dataset) });
       if (!persisted.ok) throw new Error(`Não foi possível salvar as métricas de ${p.name} no MongoDB.`);
       const stored = await fetch(snapshotUrl, { headers: { cookie: context.backendCookie } });

@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { DataTable } from "./DataTable";
 import { FailureDetailsTable, FailureNaturePanel } from "./FailureNature";
 import { ContractCoveragePanel } from "./ContractCoverage";
@@ -114,8 +115,32 @@ const sourceWarnings = (used: SourceUse[]) => [...new Set(used.flatMap(source =>
 
 export function WidgetBody({ type, d, product, periodLabel }: { type: string; d: DashData; product: Product; periodLabel: string }) {
   switch (type as WidgetType) {
-    case "success_gauge":
-      return <Gauge rate={summarize(d.inPeriod).rate} label={product.toUpperCase()} />;
+    case "success_gauge": {
+      // Na visão geral, a taxa de cada projeto (só os que têm esta frente configurada) complementa a taxa geral.
+      const perProject = d.projects.length > 1 ? d.projects.filter((p) => p.sources[product].executions.url).map((p) => {
+        const s = summarize(d.inPeriod.filter((e) => e.triggerId.startsWith(`${p.project.id}-`)));
+        const text = p.sources[product].executions.mode !== "github" ? "sem dados" : s.rate == null ? "sem execuções no período" : fmtPct(s.rate);
+        return { id: p.project.id, name: p.project.name, text, rate: s.rate };
+      }).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")) : [];
+      return (
+        <>
+          <Gauge rate={summarize(d.inPeriod).rate} label={product.toUpperCase()} />
+          {perProject.length > 1 && (
+            <div className="mt-4 border-t border-border pt-3">
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">Taxa de sucesso por projeto</p>
+              <ul className="grid gap-1 text-sm">
+                {perProject.map((p) => (
+                  <li key={p.id} className="flex items-baseline justify-between gap-3">
+                    <span>{p.name}</span>
+                    <span className={cn("font-mono", p.rate == null ? "text-muted-foreground" : p.rate >= 90 ? "text-success" : p.rate >= 80 ? "text-warning" : "text-danger")}>{p.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      );
+    }
     case "summary_cards": {
       if (!d.projects.some((p) => p.sources[product].executions.mode === "github")) {
         return <EmptyState>Sem dados de execução disponíveis para esta fonte.</EmptyState>;
@@ -227,7 +252,7 @@ export function WidgetBody({ type, d, product, periodLabel }: { type: string; d:
       );
     }
     case "project_ranking": {
-      const rows = d.projects.map((p) => {
+      const rows = d.projects.filter((p) => p.sources[product].executions.url).map((p) => {
         const ex = d.inPeriod.filter((e) => e.triggerId.startsWith(p.project.id));
         const s = summarize(ex);
         const evo = p.evolution[product].at(-1);
