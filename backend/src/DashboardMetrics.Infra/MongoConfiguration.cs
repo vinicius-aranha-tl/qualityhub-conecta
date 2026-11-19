@@ -15,7 +15,15 @@ public static class MongoConfiguration
             ?? throw new InvalidOperationException("Configure a conexão do MongoDB.");
         var name = configuration["MongoDbOptions:DatabaseName"]
             ?? throw new InvalidOperationException("Configure o nome do banco MongoDB.");
-        services.AddSingleton<IMongoClient>(_ => new MongoClient(connection));
+        services.AddSingleton<IMongoClient>(_ =>
+        {
+            var settings = MongoClientSettings.FromConnectionString(connection);
+            // As capturas de métricas têm alguns MB de JSON repetitivo: comprimir o tráfego com o Atlas
+            // reduz bastante o tempo de leitura e gravação. Quem já define `compressors` na conexão prevalece.
+            if (settings.Compressors.Count == 0)
+                settings.Compressors = [new MongoDB.Driver.Core.Configuration.CompressorConfiguration(MongoDB.Driver.Core.Compression.CompressorType.Zlib)];
+            return new MongoClient(settings);
+        });
         services.AddSingleton(provider => provider.GetRequiredService<IMongoClient>().GetDatabase(name));
         services.AddScoped<IProjectRepository, MongoProjectRepository>();
         services.AddScoped<IWidgetRepository, MongoWidgetRepository>();
