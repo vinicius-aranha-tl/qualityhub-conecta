@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireBackendAuth } from "@/lib/backend-auth";
 import { mapProject } from "@/lib/backend-client";
-import type { BoardColumn, BugItem, ContractCoverage, EvolutionPoint, Execution, Product } from "@/lib/metrics";
-import { CONTRACT_COVERAGE_FILE, countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeContractCoverage, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeAzureWorkItems, normalizeLifecycle, normalizeReasons, normalizeStability, REASONS_FILE, QUALITY_HUB_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
+import type { BoardColumn, BugItem, ContractCoverage, EvolutionPoint, Execution, Product, Treatment } from "@/lib/metrics";
+import { CONTRACT_COVERAGE_FILE, countRecords, decodeGithubContent, EVOLUTION_FILE, EXECUTIONS_FILE, FormatError, LIFECYCLE_FILE, normalizeContractCoverage, normalizeDatedFailures, normalizeEvolution, normalizeExecutions, normalizeAzureWorkItems, normalizeLifecycle, normalizeReasons, normalizeStability, normalizeTreatments, REASONS_FILE, TREATMENTS_FILE, QUALITY_HUB_FILES, STABILITY_FILE, TEST_HISTORY_FILE, type DatedFailureHistory, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 
 export type SourceKind = "executions" | "evolution";
 export interface SourceStatus {
@@ -73,6 +73,11 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
   return results;
 }
 
+/** Arquivo na branch padrão do repositório (fora da pasta de métricas), ex.: quality/tratativas.json. */
+export function repoFileUrl(owner: string, repo: string, path: string) {
+  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
 export function contentsUrl(owner: string, repo: string, branch: string, file: string) {
   return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/quality-hub/${file}?ref=${encodeURIComponent(branch)}`;
 }
@@ -110,6 +115,8 @@ export interface ProjectData {
     testHistory?: { status: SourceStatus; file: string; data: DatedFailureHistory | null };
     /** Só API: contrato em produção (Swagger) e quais condições têm teste. */
     contract?: { status: SourceStatus; file: string; data: ContractCoverage | null };
+    /** Tratativas confirmadas das falhas (quality/tratativas.json na branch padrão). */
+    treatments?: { status: SourceStatus; file: string; data: Treatment[] | null };
   }>;
   fetchedAt: string;
   sourceFingerprint?: string;
@@ -147,7 +154,7 @@ export const loadDashboardData = createServerFn({ method: "POST" })
     const projects = (await response.json() as Parameters<typeof mapProject>[0][]).map(mapProject).filter(p => !data.slug || p.slug === data.slug);
     // Sincroniza até 3 projetos ao mesmo tempo para não esperar um por um nem estourar o limite do GitHub.
     return mapLimit(projects, 3, async (p): Promise<ProjectData> => {
-      const sourceKey = JSON.stringify(["dated-failures-v2", p.api_repo_owner, p.api_repo_name, p.api_branch, p.ui_repo_owner, p.ui_repo_name, p.ui_branch, p.api_executions_url, p.api_evolution_url, p.ui_executions_url, p.ui_evolution_url]);
+      const sourceKey = JSON.stringify(["treatments-v1", p.api_repo_owner, p.api_repo_name, p.api_branch, p.ui_repo_owner, p.ui_repo_name, p.ui_branch, p.api_executions_url, p.api_evolution_url, p.ui_executions_url, p.ui_evolution_url]);
       const fingerprint = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sourceKey)))].map(byte => byte.toString(16).padStart(2, "0")).join("");
       const snapshotUrl = `${backendUrl}/api/v1/metric-snapshots/${encodeURIComponent(p.id)}`;
       const snapshotResponse = await fetch(snapshotUrl, { headers: { cookie: context.backendCookie } });
@@ -186,12 +193,13 @@ export const loadDashboardData = createServerFn({ method: "POST" })
         evolution[product] = ev.data ?? [];
         const ds = `${p.name} · ${product.toUpperCase()}`;
         const u = (f: string) => (r ? contentsUrl(r.owner, r.name, r.branch, f) : null);
-        const [st, rs, lc, th, ct] = await Promise.all([
+        const [st, rs, lc, th, ct, tr] = await Promise.all([
           readSource(u(STABILITY_FILE), (raw) => normalizeStability(raw, ds), force),
           readSource(u(REASONS_FILE), (raw) => normalizeReasons(requireScheduledScope(raw), ds), force, (d) => d.failures.length),
           readSource(u(LIFECYCLE_FILE), (raw) => normalizeLifecycle(requireScheduledScope(raw), ds), force),
           readSource(u(TEST_HISTORY_FILE), normalizeDatedFailures, force, d => d.failures.length, true),
           product === "api" ? readSource(u(CONTRACT_COVERAGE_FILE), normalizeContractCoverage, force, (d) => d.conditions.length, true) : Promise.resolve(null),
+          readSource(r ? repoFileUrl(r.owner, r.name, TREATMENTS_FILE) : null, (raw) => normalizeTreatments(raw, product, ds), force, undefined, true),
         ]);
         special[product] = {
           stability: { ...st, file: STABILITY_FILE },
@@ -199,6 +207,7 @@ export const loadDashboardData = createServerFn({ method: "POST" })
           lifecycle: { ...lc, file: LIFECYCLE_FILE },
           testHistory: { ...th, file: TEST_HISTORY_FILE },
           ...(ct ? { contract: { ...ct, file: CONTRACT_COVERAGE_FILE } } : {}),
+          treatments: { ...tr, file: TREATMENTS_FILE },
         };
       }
       const failed = (["api", "ui"] as const).some(product => sources[product].executions.mode === "error" || sources[product].evolution.mode === "error");

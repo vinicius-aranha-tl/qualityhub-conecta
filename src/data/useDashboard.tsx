@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useAuth } from "@/hooks/useAuth";
-import { aggregateEvolution, classifyFailures, daysAgoISO, dedupeExecutions, detectIncidents, failureRows, filterExecutions, flakyTable, causeDistribution, groupFailureOccurrences, type ClassifiedFailure, type ContractCoverage, type FailureIncident, type Product, type TestOccurrence, type Trigger } from "@/lib/metrics";
+import { aggregateEvolution, classifyFailures, daysAgoISO, dedupeExecutions, detectIncidents, failureRows, filterExecutions, flakyTable, causeDistribution, groupFailureOccurrences, type ClassifiedFailure, type ContractCoverage, type FailureIncident, type Product, type TestOccurrence, type Treatment, type Trigger } from "@/lib/metrics";
 import { scenarioTitle, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 import type { ProjectData } from "@/lib/sources.functions";
 import { loadBugs, loadDashboardData } from "@/lib/sources.functions";
@@ -218,6 +218,8 @@ export interface NatureData {
   /** Produtos sem histórico de testes no período (nada a classificar). */
   missing: Product[];
   used: SourceUse[];
+  /** Tratativas confirmadas (quality/tratativas.json) com data no período. */
+  treatments: Treatment[];
 }
 
 /**
@@ -258,5 +260,6 @@ export function buildNature(projects: ProjectData[], now: Date, periodDays: numb
         }
       if (runs.length && !used.some((u) => u.product === product && u.fallback)) used.push({ product, file: "history.json", fallback: true, reason: "Sem test-history.json: falhas em massa detectadas pelo histórico de execuções." });
     }
-  return { rows: classifyFailures(tests), incidents: detectIncidents(tests), missing: (["api", "ui"] as const).filter((product) => !has.has(product)), used };
+  const treatments = projects.flatMap((p) => (["api", "ui"] as const).flatMap((product) => p.special?.[product]?.treatments?.data ?? [])).filter((t) => inPeriod(t.date));
+  return { rows: classifyFailures(tests), incidents: detectIncidents(tests), missing: (["api", "ui"] as const).filter((product) => !has.has(product)), used, treatments };
 }

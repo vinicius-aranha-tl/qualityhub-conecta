@@ -1111,3 +1111,86 @@ export function squadComparison(items: BugItem[], from: string | null, to: strin
     };
   }).sort((a, b) => b.open - a.open || b.total - a.total || a.squad.localeCompare(b.squad));
 }
+
+// ---------- Tratativa das falhas (quality/tratativas.json de cada repositório de teste) ----------
+//
+// A classificação automática acima é um palpite pela evidência. A tratativa é a conclusão confirmada
+// pelo time (registrada pelo Healer no PR da correção): causa, o que foi feito e se já foi resolvido.
+
+export type TreatmentClass = "bug-produto" | "mudanca-produto" | "massa" | "codificacao" | "infra-ambiente" | "intermitencia";
+export type TreatmentStatus = "corrigido" | "em-investigacao" | "aguardando-produto" | "recorrente";
+export const TREATMENT_ORDER: TreatmentClass[] = ["bug-produto", "mudanca-produto", "massa", "codificacao", "infra-ambiente", "intermitencia"];
+export const TREATMENT_STATUSES: TreatmentStatus[] = ["corrigido", "em-investigacao", "aguardando-produto", "recorrente"];
+export const TREATMENT_LABEL: Record<TreatmentClass, string> = {
+  "bug-produto": "Bug do produto",
+  "mudanca-produto": "Mudança do produto não avisada",
+  massa: "Massa de teste",
+  codificacao: "Codificação fora do padrão",
+  "infra-ambiente": "Infra e ambiente",
+  intermitencia: "Intermitência em investigação",
+};
+/** De quem é a causa: do produto, nossa (construção dos testes) ou de infraestrutura. */
+export const TREATMENT_SIDE: Record<TreatmentClass, "produto" | "testes" | "infra"> = {
+  "bug-produto": "produto", "mudanca-produto": "produto", massa: "testes", codificacao: "testes", "infra-ambiente": "infra", intermitencia: "testes",
+};
+export const TREATMENT_STATUS_LABEL: Record<TreatmentStatus, string> = {
+  corrigido: "Corrigido", "em-investigacao": "Em investigação", "aguardando-produto": "Aguardando produto", recorrente: "Recorrente",
+};
+
+export interface Treatment {
+  id: string;
+  /** testId (UI) ou título do cenário (API). */
+  tests: string[];
+  runs: string[];
+  classification: TreatmentClass;
+  justification: string;
+  correction: string;
+  status: TreatmentStatus;
+  reference?: string | undefined;
+  /** AAAA-MM-DD */
+  date: string;
+  product: Product;
+  dataSource: string;
+}
+
+/** Tratativa mais recente registrada para o teste do grupo (mesma fonte e frente; casa pelo título ou por uma parte da chave). */
+export function treatmentFor(group: { title: string; testKey: string; dataSource: string; product: Product }, treatments: Treatment[]): Treatment | undefined {
+  const keys = new Set([group.title, ...group.testKey.split("|")].map((k) => k.trim()).filter(Boolean));
+  return treatments
+    .filter((t) => t.product === group.product && t.dataSource === group.dataSource && t.tests.some((test) => keys.has(test.trim())))
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+}
+
+export interface TreatmentSummary {
+  classification: TreatmentClass;
+  total: number;
+  fixed: number;
+  open: number;
+  recurring: number;
+  /** O que foi feito, do mais recente para o mais antigo, sem repetir. */
+  corrections: string[];
+}
+
+/** Quantas tratativas por causa, quantas resolvidas e o que foi feito (para o painel e o relatório quinzenal). */
+export function summarizeTreatments(treatments: Treatment[]): TreatmentSummary[] {
+  return TREATMENT_ORDER.map((classification) => {
+    const of = treatments.filter((t) => t.classification === classification).sort((a, b) => b.date.localeCompare(a.date));
+    return {
+      classification,
+      total: of.length,
+      fixed: of.filter((t) => t.status === "corrigido").length,
+      open: of.filter((t) => t.status === "em-investigacao" || t.status === "aguardando-produto").length,
+      recurring: of.filter((t) => t.status === "recorrente").length,
+      corrections: [...new Set(of.map((t) => t.correction).filter(Boolean))],
+    };
+  }).filter((s) => s.total > 0);
+}
+
+/** Uma frase por causa, para o resumo da ARQ SYNC. Ex.: "Massa de teste: 3 falhas, 2 corrigidas, 1 em aberto — Massa exclusiva com data distante." */
+export function treatmentLine(s: TreatmentSummary): string {
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const parts = [plural(s.total, "falha", "falhas"), plural(s.fixed, "corrigida", "corrigidas")];
+  if (s.open) parts.push(`${s.open} em aberto`);
+  if (s.recurring) parts.push(plural(s.recurring, "recorrente", "recorrentes"));
+  return `${TREATMENT_LABEL[s.classification]}: ${parts.join(", ")}${s.corrections[0] ? ` — ${s.corrections[0]}` : ""}`;
+}
