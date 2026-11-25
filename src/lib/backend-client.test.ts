@@ -3,7 +3,7 @@ import { frontProducts, mapProject, projectInput } from "./backend-client";
 
 const backendProject = (fronts?: string | null) => ({
   id: "1", name: "Visitas", slug: "visitas", description: "", ...(fronts === undefined ? {} : { fronts }),
-  apiRepoOwner: "Conecta-ag", apiRepoName: "api-automation-visitas-test", apiBranch: "automation-metrics",
+  apiRepoOwner: "Conecta-ag", apiRepoName: "test-api-conecta-visitas", apiBranch: "automation-metrics",
   uiRepoOwner: null, uiRepoName: null, uiBranch: "automation-metrics",
   apiExecutionsUrl: null, apiEvolutionUrl: null, uiExecutionsUrl: null, uiEvolutionUrl: null,
   createdAt: "2026-11-10T00:00:00Z", lastSyncedAt: null, lastSyncError: null,

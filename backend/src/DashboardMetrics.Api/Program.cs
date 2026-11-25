@@ -236,8 +236,8 @@ api.MapPost("/setup/recomenda", async (IMongoDatabase database, IProjectReposito
         var project = new Project {
             Name = "Conecta Recomenda", Slug = "conecta-recomenda",
             Description = "Métricas de automação do Recomenda.",
-            ApiRepoOwner = "Conecta-ag", ApiRepoName = "api-automation-recomenda-test",
-            UiRepoOwner = "Conecta-ag", UiRepoName = "ui-automation-recomenda-test"
+            ApiRepoOwner = "Conecta-ag", ApiRepoName = "test-api-conecta-recomenda",
+            UiRepoOwner = "Conecta-ag", UiRepoName = "test-ui-conecta-recomenda"
         };
         try { await projects.InsertAsync(project, cancellationToken); }
         catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey) { }
