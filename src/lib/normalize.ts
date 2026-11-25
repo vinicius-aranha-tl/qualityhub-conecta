@@ -1,5 +1,5 @@
-import type { BugItem, BugKind, CapturedCall, CapturedEvidence, CapturedHttpError, CapturedNetworkFailure, ContractCondition, ContractCoverage, EvolutionPoint, Execution, Product, TestResult, Trigger } from "@/lib/metrics";
-import { groupFailureOccurrences, squadOf } from "@/lib/metrics";
+import type { BugItem, Treatment, TreatmentClass, TreatmentStatus, BugKind, CapturedCall, CapturedEvidence, CapturedHttpError, CapturedNetworkFailure, ContractCondition, ContractCoverage, EvolutionPoint, Execution, Product, TestResult, Trigger } from "@/lib/metrics";
+import { groupFailureOccurrences, squadOf, TREATMENT_ORDER, TREATMENT_STATUSES } from "@/lib/metrics";
 
 /** Files published by the automations under quality-hub/ on the metrics branch. */
 export const QUALITY_HUB_FILES: Record<Product, string[]> = {
@@ -353,5 +353,30 @@ export function normalizeAzureWorkItems(raw: unknown, options: AzureNormalizeOpt
       column: kind === "defeito" ? "" : text(field(options.columnField) ?? field("System.BoardColumn"), 120),
       url: `${options.webBase}/_workitems/edit/${id}`,
     }];
+  });
+}
+
+// ---------- Tratativa das falhas ----------
+/** Arquivo na branch padrão de cada repositório de teste (vem pelo PR da correção, não pelo CI). */
+export const TREATMENTS_FILE = "quality/tratativas.json";
+
+/**
+ * quality/tratativas.json → tratativas válidas. Aceita a lista direto ou { tratativas: [...] }.
+ * Item com classificação ou status desconhecido é ignorado (não derruba o painel); estrutura errada é FormatError.
+ */
+export function normalizeTreatments(raw: unknown, product: Product, dataSource: string): Treatment[] {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? (raw as Record<string, unknown>)["tratativas"] : undefined;
+  if (!Array.isArray(list)) throw new FormatError("esperado { tratativas: [...] }");
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const texts = (v: unknown) => (Array.isArray(v) ? v.map(text).filter(Boolean) : text(v) ? [text(v)] : []);
+  return list.flatMap((item): Treatment[] => {
+    if (!item || typeof item !== "object") return [];
+    const o = item as Record<string, unknown>;
+    const classification = text(o["classificacao"]) as TreatmentClass;
+    const status = text(o["status"]) as TreatmentStatus;
+    const tests = texts(o["testes"]);
+    const date = text(o["data"]).slice(0, 10);
+    if (!TREATMENT_ORDER.includes(classification) || !TREATMENT_STATUSES.includes(status) || !tests.length || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+    return [{ id: text(o["id"]) || `${date}-${tests[0]}`, tests, runs: texts(o["execucoes"]), classification, justification: text(o["justificativa"]), correction: text(o["correcao"]), status, reference: text(o["referencia"]) || undefined, date, product, dataSource }];
   });
 }

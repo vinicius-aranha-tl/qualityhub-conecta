@@ -19,7 +19,7 @@ function dash(product: Product): DashData {
     valid: runs, inPeriod: runs, allHistory: runs, evolution: [], periodDays: 3,
     special: { flaky: empty, failures: empty, reasons: empty, lifecycle: empty },
     specialByProduct: { flaky: { rows: [{ title: "Instável", executions: 3, failureExecutions: 3, successRate: 0, dataSource: "P" }], used: [] }, failures: empty, reasons: empty, lifecycle: empty },
-    nature: { rows: [...["a", "b", "c", "d", "e", "f"].map((k) => failure(k, "2026-11-09", true)), failure("g", "2026-11-10", false)], incidents: [{ product, date: "2026-11-09", runId: "2026-11-09", failed: 6, total: 10, dataSource: "P" }], missing: [], used: [] },
+    nature: { rows: [...["a", "b", "c", "d", "e", "f"].map((k) => failure(k, "2026-11-09", true)), failure("g", "2026-11-10", false)], incidents: [{ product, date: "2026-11-09", runId: "2026-11-09", failed: 6, total: 10, dataSource: "P" }], missing: [], used: [], treatments: [{ id: "t1", tests: ["a"], runs: [], classification: "massa", justification: "Massa mudou.", correction: "Massa exclusiva.", status: "corrigido", date: "2026-11-09", product, dataSource: "P" }] },
     contract: { sources: [], missing: [] },
   } as unknown as DashData;
 }
@@ -27,7 +27,7 @@ function dash(product: Product): DashData {
 describe("relatório em PDF", () => {
   it("o comparativo por projeto só existe na visão geral", () => {
     expect(availableSections(false)).not.toContain("ranking");
-    expect(availableSections(true)).toEqual(["summary", "volume", "ranking", "nature", "details", "flaky", "history"]);
+    expect(availableSections(true)).toEqual(["summary", "volume", "ranking", "nature", "treatments", "details", "flaky", "history"]);
   });
 
   it("calcula os números de cada seção a partir dos dados do painel", () => {
@@ -47,5 +47,16 @@ describe("relatório em PDF", () => {
     const one = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     drawReport(one, { projectName: "Visitas", periodLabel: "Últimos 3 dias", isOverview: false, products: { api: dash("api") }, include: ["summary", "nature", "flaky", "history"], generatedAt: new Date("2026-11-10T12:00:00Z") });
     expect(one.getNumberOfPages()).toBe(5);
+  });
+});
+
+describe("seção Tratativa das falhas", () => {
+  it("gera a página com uma frase por causa", () => {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    drawReport(pdf, { projectName: "Projeto 1", periodLabel: "Últimos 3 dias", isOverview: false, products: { api: dash("api"), ui: dash("ui") }, include: ["treatments"], generatedAt: new Date("2026-11-10T12:00:00Z") });
+    expect(pdf.getNumberOfPages()).toBe(2);
+    const text = (pdf.output() as string);
+    expect(text).toContain("Tratativa das falhas");
+    expect(text).toContain("Massa de teste: 1 falha, 1 corrigida");
   });
 });

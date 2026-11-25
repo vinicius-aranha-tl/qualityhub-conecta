@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import type { NatureData } from "@/data/useDashboard";
-import { groupClassified, NATURE_LABEL, NATURE_MEANING, NATURE_ORDER, NATURE_OWNER, PHASE_LABEL, SYMPTOM_LABEL, testLocation, type CapturedEvidence, type ClassifiedFailure, type Confidence, type FailureNature, type NatureGroup, type Product } from "@/lib/metrics";
+import { groupClassified, NATURE_LABEL, NATURE_MEANING, NATURE_ORDER, NATURE_OWNER, PHASE_LABEL, summarizeTreatments, SYMPTOM_LABEL, testLocation, TREATMENT_LABEL, TREATMENT_SIDE, TREATMENT_STATUS_LABEL, treatmentFor, treatmentLine, type CapturedEvidence, type ClassifiedFailure, type Confidence, type FailureNature, type NatureGroup, type Product, type Treatment } from "@/lib/metrics";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -124,7 +124,9 @@ export function FailureNaturePanel({ data, product }: { data: NatureData; produc
         </>
       )}
 
-      <FailureDetail group={selected} onClose={() => setSelected(null)} />
+      <TreatmentSummaryBlock treatments={(data.treatments ?? []).filter((t) => t.product === product)} />
+
+      <FailureDetail group={selected} treatment={selected ? treatmentFor(selected, data.treatments ?? []) : undefined} onClose={() => setSelected(null)} />
     </div>
   );
 }
@@ -162,15 +164,19 @@ export function FailureDetailsTable({ data, product }: { data: NatureData; produ
         </div>
       )}
       <DataTable detailView onRowSelect={(row) => setSelected(row as unknown as NatureGroup)} empty="Nenhuma falha definitiva no período selecionado."
-        rows={visible.map((g) => ({ ...g, natureLabel: NATURE_LABEL[g.nature], symptomLabel: SYMPTOM_LABEL[g.symptom] })) as unknown as Record<string, unknown>[]}
+        rows={visible.map((g) => {
+          const t = treatmentFor(g, data.treatments ?? []);
+          return { ...g, natureLabel: NATURE_LABEL[g.nature], symptomLabel: SYMPTOM_LABEL[g.symptom], treatmentLabel: t ? `${TREATMENT_STATUS_LABEL[t.status]} · ${TREATMENT_LABEL[t.classification]}` : "Sem tratativa" };
+        }) as unknown as Record<string, unknown>[]}
         initialSort={{ key: "occurrences", dir: "desc" }} columns={[
           { key: "title", label: "Cenário", width: 320 },
           { key: "error", label: "Erro", width: 320, className: "font-mono text-xs", render: (r) => String(r["error"] || "Mensagem não registrada") },
           { key: "natureLabel", label: "Motivo provável", width: 250, render: (r) => <span className="inline-flex items-center gap-2"><span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: NATURE_COLOR[r["nature"] as FailureNature] }} />{String(r["natureLabel"])}</span> },
           { key: "occurrences", label: "Ocorrências", numeric: true, width: 150, render: (r) => <>{fmtInt(Number(r["occurrences"]))}{Number(r["incidentOccurrences"]) > 0 && <span className="ml-1 text-xs text-muted-foreground">({fmtInt(Number(r["incidentOccurrences"]))} na queda do ambiente)</span>}</> },
           { key: "lastDate", label: "Última vez", width: 150, render: (r) => fmtDate(String(r["lastDate"])) },
+          { key: "treatmentLabel", label: "Tratativa", width: 260, render: (r) => <span className={r["treatmentLabel"] === "Sem tratativa" ? "text-muted-foreground" : ""}>{String(r["treatmentLabel"])}</span> },
         ]} />
-      <FailureDetail group={selected} onClose={() => setSelected(null)} />
+      <FailureDetail group={selected} treatment={selected ? treatmentFor(selected, data.treatments ?? []) : undefined} onClose={() => setSelected(null)} />
     </div>
   );
 }
@@ -214,7 +220,30 @@ function CapturedDetails({ captured }: { captured: CapturedEvidence }) {
   );
 }
 
-function FailureDetail({ group, onClose }: { group: NatureGroup | null; onClose: () => void }) {
+const SIDE_LABEL = { produto: "Causa no produto", testes: "Causa nos testes (nossa)", infra: "Causa na infraestrutura" } as const;
+
+/** O que o time confirmou e fez com as falhas: uma linha por causa (a mesma frase vai para o relatório). */
+function TreatmentSummaryBlock({ treatments }: { treatments: Treatment[] }) {
+  const summary = summarizeTreatments(treatments);
+  return (
+    <section className="grid gap-2 rounded-lg border border-border p-4" aria-label="Tratativa das falhas">
+      <h3 className="text-base font-semibold text-card-foreground">Tratativa das falhas</h3>
+      {summary.length === 0
+        ? <p className="text-sm text-muted-foreground">Nenhuma tratativa registrada no período. O Healer registra em <code className="font-mono text-xs">quality/tratativas.json</code> do repositório, no PR da correção.</p>
+        : <ul className="grid gap-1.5 text-sm">
+            {summary.map((s) => (
+              <li key={s.classification}>
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">{SIDE_LABEL[TREATMENT_SIDE[s.classification]]}</span>
+                <span className="block text-card-foreground">{treatmentLine(s)}</span>
+              </li>
+            ))}
+          </ul>}
+      <p className="text-xs text-muted-foreground">O motivo acima é automático (pela evidência). A tratativa é a causa confirmada pelo time, o que foi feito e se já foi resolvido.</p>
+    </section>
+  );
+}
+
+function FailureDetail({ group, treatment, onClose }: { group: NatureGroup | null; treatment?: Treatment | undefined; onClose: () => void }) {
   return (
     <Dialog open={group !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -231,6 +260,16 @@ function FailureDetail({ group, onClose }: { group: NatureGroup | null; onClose:
                 <span className="basis-full text-xs text-muted-foreground">{CONFIDENCE[group.confidence].help}</span>
                 <span className="text-xs text-muted-foreground">Quem age: {NATURE_OWNER[group.nature]}</span>
               </div>
+              <Field label="Tratativa confirmada">
+                {treatment
+                  ? <>
+                      <strong>{TREATMENT_STATUS_LABEL[treatment.status]}</strong> · {TREATMENT_LABEL[treatment.classification]} ({fmtDate(treatment.date)})
+                      {treatment.justification && <span className="block">Por quê: {treatment.justification}</span>}
+                      {treatment.correction && <span className="block">O que foi feito: {treatment.correction}</span>}
+                      {treatment.reference && <span className="block text-xs text-muted-foreground">Referência: {treatment.reference}</span>}
+                    </>
+                  : <span className="text-muted-foreground">Sem tratativa registrada para este teste.</span>}
+              </Field>
               <Field label="O que aconteceu">{SYMPTOM_LABEL[group.symptom]}</Field>
               <Field label="Por que este motivo">{group.rule}</Field>
               <Field label="Prova">

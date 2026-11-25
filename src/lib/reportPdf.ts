@@ -1,6 +1,6 @@
 import type { jsPDF } from "jspdf";
 import type { DashData } from "@/data/useDashboard";
-import { daysAgoISO, groupClassified, NATURE_LABEL, NATURE_ORDER, NATURE_OWNER, summarize, testCount, type FailureNature, type Product } from "@/lib/metrics";
+import { daysAgoISO, groupClassified, NATURE_LABEL, NATURE_ORDER, NATURE_OWNER, summarize, summarizeTreatments, testCount, treatmentLine, type FailureNature, type Product } from "@/lib/metrics";
 
 /** Seções que podem entrar no relatório, na ordem em que aparecem. */
 export const REPORT_SECTIONS = [
@@ -8,6 +8,7 @@ export const REPORT_SECTIONS = [
   { key: "volume", label: "Volume diário de execuções" },
   { key: "ranking", label: "Comparativo por projeto", overviewOnly: true },
   { key: "nature", label: "Motivo das falhas e quem resolve" },
+  { key: "treatments", label: "Tratativa das falhas (o que foi feito)" },
   { key: "details", label: "Detalhamento das falhas" },
   { key: "flaky", label: "Flaky tests" },
   { key: "history", label: "Histórico de falhas" },
@@ -293,6 +294,21 @@ export function drawReport(pdf: jsPDF, input: ReportInput) {
           const y = BOTTOM - 16;
           pdf.setFillColor(...c.warningSubtle).roundedRect(x - 1, y - 6, width + 2, 12, 2, 2, "F");
           font(10.5, "normal", c.ink).text(fit(n.incidents.map((i) => `${day(i.date)}: ${num(i.failed)} de ${num(i.total)} testes falharam juntos (queda do ambiente)`).join(" · "), width - 4), x + 1, y + 1.5);
+        }
+      });
+    }
+
+    if (key === "treatments") {
+      page("Tratativa das falhas", `${input.periodLabel} · causa confirmada pelo time, o que foi feito e o que segue em aberto`);
+      columns((product, d, x, width) => {
+        const summary = summarizeTreatments((d.nature.treatments ?? []).filter((t) => t.product === product));
+        if (!summary.length) { empty(x, TOP + 30, "Nenhuma tratativa registrada no período."); return; }
+        let y = TOP + 26;
+        for (const item of summary) {
+          const lines = pdf.setFontSize(11).splitTextToSize(clean(treatmentLine(item)), width) as string[];
+          if (y + lines.length * 5 > BOTTOM - 4) { font(10, "normal", c.muted).text("+ demais tratativas no dashboard", x, y); break; }
+          font(11, "normal", c.ink).text(lines, x, y);
+          y += lines.length * 5 + 4;
         }
       });
     }
