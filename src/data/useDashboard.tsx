@@ -1,6 +1,7 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useAuth } from "@/hooks/useAuth";
 import { aggregateEvolution, classifyFailures, daysAgoISO, dedupeExecutions, detectIncidents, failureRows, filterExecutions, flakyTable, causeDistribution, groupFailureOccurrences, type ClassifiedFailure, type ContractCoverage, type FailureIncident, type Product, type TestOccurrence, type Trigger } from "@/lib/metrics";
 import { scenarioTitle, type ReasonRow, type SpecialFailureRow, type StabilityRow } from "@/lib/normalize";
 import type { ProjectData } from "@/lib/sources.functions";
@@ -34,11 +35,26 @@ export function requestForcedRefresh() {
   forceUntil = Date.now() + 5000;
 }
 
+/** Captura com mais de 5 min é sincronizada com o GitHub em segundo plano (só administradores sincronizam). */
+const SYNC_AFTER = 5 * 60_000;
+const lastBackgroundSync = new Map<string, number>();
+
 /** Data for one project (slug) or all projects (null), already deduped and filtered for one product. */
 export function useDashboardData(slug: string | null, product: Product) {
   const { filters } = useFilters();
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
   const load = useServerFn(loadDashboardData);
-  const q = useQuery({ queryKey: ["dataset", slug], queryFn: () => load({ data: { slug, force: Date.now() < forceUntil } }), staleTime: 5 * 60_000, refetchInterval: 5 * 60_000 });
+  // A página abre com a captura salva; ela não espera a leitura do GitHub.
+  const q = useQuery({ queryKey: ["dataset", slug], queryFn: () => load({ data: { slug, force: Date.now() < forceUntil } }), staleTime: SYNC_AFTER, refetchInterval: SYNC_AFTER });
+  useEffect(() => {
+    if (!isAdmin || !q.data?.length || q.isFetching) return;
+    const oldest = Math.min(...q.data.map((p) => Date.parse(p.fetchedAt)));
+    const key = JSON.stringify(slug);
+    if (Date.now() - oldest < SYNC_AFTER || Date.now() - (lastBackgroundSync.get(key) ?? 0) < SYNC_AFTER) return;
+    lastBackgroundSync.set(key, Date.now());
+    load({ data: { slug, sync: true } }).then((fresh) => qc.setQueryData(["dataset", slug], fresh)).catch(() => undefined);
+  }, [isAdmin, q.data, q.isFetching, slug, load, qc]);
   const d = useMemo(() => {
     if (!q.data) return null;
     const now = new Date();

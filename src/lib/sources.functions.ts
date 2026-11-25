@@ -135,9 +135,12 @@ export function notSynced(p: { id: string; name: string; slug: string }, message
 /** Loads dashboard data for one project (by slug) or all projects. Never substitutes demonstration data for a real source. */
 export const loadDashboardData = createServerFn({ method: "POST" })
   .middleware([requireBackendAuth])
-  .validator((d: unknown) => z.object({ slug: z.string().nullable(), force: z.boolean().optional() }).parse(d))
+  .validator((d: unknown) => z.object({ slug: z.string().nullable(), force: z.boolean().optional(), sync: z.boolean().optional() }).parse(d))
   .handler(async ({ data, context }) => {
     const force = Boolean(data.force);
+    // Sem `sync`, a captura salva volta na hora, mesmo antiga: a página não espera o GitHub.
+    // O painel pede a sincronização em segundo plano quando a captura passa de 5 min (`sync: true`).
+    const sync = force || Boolean(data.sync);
     const backendUrl = process.env["BACKEND_URL"] ?? "http://127.0.0.1:5080";
     const response = await fetch(`${backendUrl}/api/v1/projects`, { headers: { cookie: context.backendCookie } });
     if (!response.ok) throw new Error("Não foi possível carregar os projetos.");
@@ -155,7 +158,7 @@ export const loadDashboardData = createServerFn({ method: "POST" })
       if (context.backendRole !== "admin") {
         return cached ?? notSynced(p, `As métricas de ${p.name} ainda não foram sincronizadas. Peça a um administrador para atualizar os dados.`);
       }
-      if (!force && fresh) return cached;
+      if (cached && !force && (fresh || !sync)) return cached;
       const repo = {
         api: p.api_repo_owner && p.api_repo_name ? { owner: p.api_repo_owner, name: p.api_repo_name, branch: p.api_branch } : null,
         ui: p.ui_repo_owner && p.ui_repo_name ? { owner: p.ui_repo_owner, name: p.ui_repo_name, branch: p.ui_branch } : null,
@@ -207,9 +210,8 @@ export const loadDashboardData = createServerFn({ method: "POST" })
       }
       const persisted = await fetch(snapshotUrl, { method: "PUT", headers: { cookie: context.backendCookie, "Content-Type": "application/json" }, body: JSON.stringify(dataset) });
       if (!persisted.ok) throw new Error(`Não foi possível salvar as métricas de ${p.name} no MongoDB.`);
-      const stored = await fetch(snapshotUrl, { headers: { cookie: context.backendCookie } });
-      if (!stored.ok) throw new Error(`Não foi possível ler as métricas salvas de ${p.name}.`);
-      return await stored.json() as ProjectData;
+      // O backend grava o JSON como recebeu: reler a captura só repetiria alguns MB de tráfego.
+      return dataset;
     });
   });
 

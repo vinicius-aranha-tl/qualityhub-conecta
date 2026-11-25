@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PERIOD_LABEL, requestForcedRefresh, useFilters, type PeriodKey } from "@/data/useDashboard";
 import { cn } from "@/lib/utils";
 
-export const APP_VERSION = "0.14.2";
+export const APP_VERSION = "0.14.3";
 
 const NAV = [
   { to: "/visao-geral", label: "Visão geral", icon: LayoutDashboard, admin: false },
